@@ -2,7 +2,7 @@
 
 Quick reference for the recommended GitHub workflow for Turnkey project.
 
-## 🔄 Workflow Model: GitHub Flow
+## Workflow Model: GitHub Flow
 
 **Simple, fast, and safe:**
 ```
@@ -10,7 +10,7 @@ main (always stable)
   └─ feature/N-description → PR → Review → Merge → Close Issue
 ```
 
-## 📋 Quick Start Checklist
+## Quick Start Checklist
 
 ### Starting Work on an Issue
 
@@ -24,7 +24,7 @@ main (always stable)
 - [ ] Address feedback
 - [ ] Merge when approved
 
-## 🏷️ Branch Naming
+## Branch Naming
 
 | Type | Format | Example |
 |------|--------|---------|
@@ -35,7 +35,7 @@ main (always stable)
 | Test | `test/N-description` | `test/9-integration-tests` |
 | Performance | `perf/N-description` | `perf/17-optimize-parser` |
 
-## 💬 Commit Messages
+## Commit Messages
 
 Follow Conventional Commits:
 
@@ -88,7 +88,7 @@ Every PR runs these checks automatically:
 - `.github/WORKFLOW.md` - Detailed workflow documentation
 - `.github/dependabot.yml` - Dependency update automation
 
-## 🎯 Project Phases
+## Project Phases
 
 | Phase | Issues | Timeline | Focus |
 |-------|--------|----------|-------|
@@ -107,7 +107,7 @@ Recommended settings for `main`:
 - ✅ Require branches to be up to date
 - ✅ Include administrators
 
-## 🏷️ Labels in Use
+##  Labels in Use
 
 **Type:**
 - `protocol`, `hardware`, `documentation`, `testing`, `performance`
@@ -148,7 +148,7 @@ git push origin main --tags
 #    - Publishes to crates.io
 ```
 
-## ✅ Pre-Push Checklist
+## Pre-Push Checklist
 
 Before pushing your branch:
 
@@ -169,7 +169,7 @@ cargo build --workspace --release
 cargo doc --workspace --no-deps
 ```
 
-## 🚀 Example Complete Workflow
+## Example Complete Workflow
 
 ```bash
 # 1. Pick issue #1: Implement Message and Frame structures
@@ -220,7 +220,7 @@ git pull origin main
 git branch -d feature/1-message-structures
 ```
 
-## 🆘 Common Issues
+## Common Issues
 
 ### CI Failing?
 
@@ -268,7 +268,7 @@ git commit -m "fix: address review feedback"
 git push
 ```
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [Full Workflow Guide](.github/WORKFLOW.md)
 - [Contributing Guide](.github/CONTRIBUTING.md)
@@ -276,7 +276,7 @@ git push
 - [Issues](https://github.com/marmota-alpina/turnkey/issues)
 - [Pull Requests](https://github.com/marmota-alpina/turnkey/pulls)
 
-## 💡 Tips
+## Tips
 
 - **Keep PRs small**: Easier to review, faster to merge
 - **Test locally**: Don't rely on CI to catch issues
