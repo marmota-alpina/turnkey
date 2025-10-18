@@ -46,7 +46,7 @@ Turnkey is ideal for developers building integrations, validating access control
 - **Linux Kernel 6.1+** (for optimal USB/GPIO support)
 - **System dependencies** (see [Installation](#installation))
 
-**🚀 Tech Stack Moderno:**
+**Tech Stack Moderno:**
 - Rust 1.90 com LLD linker (20-40% builds mais rápidos)
 - Edition 2024 (async traits nativos, generators, RPITIT)
 - Tokio async runtime
@@ -125,7 +125,7 @@ sudo cargo run --bin henry-cli -- server --features hardware
 
 ---
 
-## 📖 Usage Examples
+## Usage Examples
 
 ### Basic Server Mode
 ```bash
@@ -163,7 +163,7 @@ henry-cli config set rfid.poll_interval 250
 henry-cli config reset
 ```
 
-## 🏗️ Architecture
+## Architecture
 ```
 henry_access_control_emulator/
 ├── crates/
@@ -279,7 +279,7 @@ pcsc_scan
 
 To use Control iD iDBio readers:
 
-1. Download SDK from [Control iD](https://www.controlid.com.br)
+1. Download SDK from [Control iD](https://www.controlid.com.br/controle-de-acesso/idbio/)
 2. Place libraries in `vendor/controlid/`:
 ```
    vendor/controlid/
