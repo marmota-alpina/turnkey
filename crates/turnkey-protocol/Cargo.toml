@@ -1,0 +1,17 @@
+[package]
+name = "turnkey-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+turnkey-core = { path = "../turnkey-core" }
+serde.workspace = true
+bytes.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[dev-dependencies]
+rstest = "0.26"
+tokio = { workspace = true, features = ["test-util", "macros"] }

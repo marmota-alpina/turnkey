@@ -1,0 +1,70 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/turnkey-core",
+    "crates/turnkey-protocol",
+    "crates/turnkey-hardware",
+    "crates/turnkey-rfid",
+    "crates/turnkey-biometric",
+    "crates/turnkey-keypad",
+    "crates/turnkey-turnstile",
+    "crates/turnkey-storage",
+    "crates/turnkey-network",
+    "crates/turnkey-emulator",
+    "crates/turnkey-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"  # 🚀 Edition 2024 com async traits nativos!
+rust-version = "1.90"
+authors = ["Jeferson Ferreira <jeferson.mab@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/marmota-alpina/turnkey"
+
+[workspace.dependencies]
+# Async
+tokio = { version = "1.48", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"  # Major update - Edition 2024 compatible!
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+
+# Hardware
+pcsc = "2.8"
+rusb = "0.9"
+serialport = "4.5"
+hidapi = "2.6"
+
+# Utils
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+bytes = "1.7"
+
+[profile.release]
+lto = "thin"  # Rust 1.90 otimiza isso melhor com LLD
+codegen-units = 1
+opt-level = 3
+strip = true
+panic = "abort"
+
+[profile.dev]
+# Usa LLD por padrão no Rust 1.90 para builds 20-40% mais rápidos
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked"  # Melhora performance de debug no Rust 1.90
+
+[profile.test]
+inherits = "dev"

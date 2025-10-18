@@ -1,0 +1,15 @@
+[package]
+name = "turnkey-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+rstest = "0.26"
