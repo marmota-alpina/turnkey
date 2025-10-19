@@ -239,6 +239,100 @@ impl CommandCode {
     pub fn len(&self) -> usize {
         self.as_str().len()
     }
+
+    /// Returns `true` if this command is an access control command.
+    ///
+    /// Access control commands are used for requesting and granting/denying access
+    /// through turnstiles and other access control devices.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::CommandCode;
+    ///
+    /// assert!(CommandCode::AccessRequest.is_access_control());
+    /// assert!(CommandCode::GrantExit.is_access_control());
+    /// assert!(CommandCode::DenyAccess.is_access_control());
+    /// assert!(!CommandCode::QueryStatus.is_access_control());
+    /// ```
+    #[inline]
+    pub fn is_access_control(&self) -> bool {
+        matches!(
+            self,
+            Self::AccessRequest
+                | Self::GrantBoth
+                | Self::GrantManual
+                | Self::GrantEntry
+                | Self::GrantExit
+                | Self::DenyAccess
+        )
+    }
+
+    /// Returns `true` if this command is a management command.
+    ///
+    /// Management commands are used for device configuration, data synchronization,
+    /// and administrative operations.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::CommandCode;
+    ///
+    /// assert!(CommandCode::SendConfig.is_management());
+    /// assert!(CommandCode::SendCards.is_management());
+    /// assert!(CommandCode::ReceiveLogs.is_management());
+    /// assert!(!CommandCode::AccessRequest.is_management());
+    /// ```
+    #[inline]
+    pub fn is_management(&self) -> bool {
+        matches!(
+            self,
+            Self::SendConfig
+                | Self::SendCards
+                | Self::SendUsers
+                | Self::SendBiometrics
+                | Self::SendDateTime
+                | Self::ReceiveLogs
+                | Self::ReceiveConfig
+        )
+    }
+
+    /// Returns `true` if this command is a turnstile status command.
+    ///
+    /// Turnstile status commands track the physical state of the turnstile rotation
+    /// mechanism during access events.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::CommandCode;
+    ///
+    /// assert!(CommandCode::WaitingRotation.is_turnstile_status());
+    /// assert!(CommandCode::RotationCompleted.is_turnstile_status());
+    /// assert!(CommandCode::RotationTimeout.is_turnstile_status());
+    /// assert!(!CommandCode::GrantExit.is_turnstile_status());
+    /// ```
+    #[inline]
+    pub fn is_turnstile_status(&self) -> bool {
+        matches!(
+            self,
+            Self::WaitingRotation | Self::RotationCompleted | Self::RotationTimeout
+        )
+    }
+
+    /// Returns `true` if this command is a query command.
+    ///
+    /// Query commands request information from devices without modifying state.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::CommandCode;
+    ///
+    /// assert!(CommandCode::QueryStatus.is_query());
+    /// assert!(!CommandCode::SendConfig.is_query());
+    /// assert!(!CommandCode::AccessRequest.is_query());
+    /// ```
+    #[inline]
+    pub fn is_query(&self) -> bool {
+        matches!(self, Self::QueryStatus)
+    }
 }
 
 impl fmt::Display for CommandCode {
@@ -416,6 +510,140 @@ mod tests {
             assert!(
                 seen.insert(format!("{:?}", cmd)),
                 "Duplicate command found in all_command_codes(): {:?}",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_access_control() {
+        // Access control commands should return true
+        assert!(CommandCode::AccessRequest.is_access_control());
+        assert!(CommandCode::GrantBoth.is_access_control());
+        assert!(CommandCode::GrantManual.is_access_control());
+        assert!(CommandCode::GrantEntry.is_access_control());
+        assert!(CommandCode::GrantExit.is_access_control());
+        assert!(CommandCode::DenyAccess.is_access_control());
+
+        // Non-access control commands should return false
+        assert!(!CommandCode::WaitingRotation.is_access_control());
+        assert!(!CommandCode::RotationCompleted.is_access_control());
+        assert!(!CommandCode::RotationTimeout.is_access_control());
+        assert!(!CommandCode::SendConfig.is_access_control());
+        assert!(!CommandCode::SendCards.is_access_control());
+        assert!(!CommandCode::SendUsers.is_access_control());
+        assert!(!CommandCode::SendBiometrics.is_access_control());
+        assert!(!CommandCode::SendDateTime.is_access_control());
+        assert!(!CommandCode::ReceiveLogs.is_access_control());
+        assert!(!CommandCode::QueryStatus.is_access_control());
+        assert!(!CommandCode::ReceiveConfig.is_access_control());
+    }
+
+    #[test]
+    fn test_is_management() {
+        // Management commands should return true
+        assert!(CommandCode::SendConfig.is_management());
+        assert!(CommandCode::SendCards.is_management());
+        assert!(CommandCode::SendUsers.is_management());
+        assert!(CommandCode::SendBiometrics.is_management());
+        assert!(CommandCode::SendDateTime.is_management());
+        assert!(CommandCode::ReceiveLogs.is_management());
+        assert!(CommandCode::ReceiveConfig.is_management());
+
+        // Non-management commands should return false
+        assert!(!CommandCode::AccessRequest.is_management());
+        assert!(!CommandCode::GrantBoth.is_management());
+        assert!(!CommandCode::GrantManual.is_management());
+        assert!(!CommandCode::GrantEntry.is_management());
+        assert!(!CommandCode::GrantExit.is_management());
+        assert!(!CommandCode::DenyAccess.is_management());
+        assert!(!CommandCode::WaitingRotation.is_management());
+        assert!(!CommandCode::RotationCompleted.is_management());
+        assert!(!CommandCode::RotationTimeout.is_management());
+        assert!(!CommandCode::QueryStatus.is_management());
+    }
+
+    #[test]
+    fn test_is_turnstile_status() {
+        // Turnstile status commands should return true
+        assert!(CommandCode::WaitingRotation.is_turnstile_status());
+        assert!(CommandCode::RotationCompleted.is_turnstile_status());
+        assert!(CommandCode::RotationTimeout.is_turnstile_status());
+
+        // Non-turnstile status commands should return false
+        assert!(!CommandCode::AccessRequest.is_turnstile_status());
+        assert!(!CommandCode::GrantBoth.is_turnstile_status());
+        assert!(!CommandCode::GrantManual.is_turnstile_status());
+        assert!(!CommandCode::GrantEntry.is_turnstile_status());
+        assert!(!CommandCode::GrantExit.is_turnstile_status());
+        assert!(!CommandCode::DenyAccess.is_turnstile_status());
+        assert!(!CommandCode::SendConfig.is_turnstile_status());
+        assert!(!CommandCode::SendCards.is_turnstile_status());
+        assert!(!CommandCode::SendUsers.is_turnstile_status());
+        assert!(!CommandCode::SendBiometrics.is_turnstile_status());
+        assert!(!CommandCode::SendDateTime.is_turnstile_status());
+        assert!(!CommandCode::ReceiveLogs.is_turnstile_status());
+        assert!(!CommandCode::QueryStatus.is_turnstile_status());
+        assert!(!CommandCode::ReceiveConfig.is_turnstile_status());
+    }
+
+    #[test]
+    fn test_is_query() {
+        // Query command should return true
+        assert!(CommandCode::QueryStatus.is_query());
+
+        // Non-query commands should return false
+        assert!(!CommandCode::AccessRequest.is_query());
+        assert!(!CommandCode::GrantBoth.is_query());
+        assert!(!CommandCode::GrantManual.is_query());
+        assert!(!CommandCode::GrantEntry.is_query());
+        assert!(!CommandCode::GrantExit.is_query());
+        assert!(!CommandCode::DenyAccess.is_query());
+        assert!(!CommandCode::WaitingRotation.is_query());
+        assert!(!CommandCode::RotationCompleted.is_query());
+        assert!(!CommandCode::RotationTimeout.is_query());
+        assert!(!CommandCode::SendConfig.is_query());
+        assert!(!CommandCode::SendCards.is_query());
+        assert!(!CommandCode::SendUsers.is_query());
+        assert!(!CommandCode::SendBiometrics.is_query());
+        assert!(!CommandCode::SendDateTime.is_query());
+        assert!(!CommandCode::ReceiveLogs.is_query());
+        assert!(!CommandCode::ReceiveConfig.is_query());
+    }
+
+    #[test]
+    fn test_command_categories_are_mutually_exclusive() {
+        // Each command should belong to exactly one category
+        for cmd in all_command_codes() {
+            let categories = [
+                cmd.is_access_control(),
+                cmd.is_management(),
+                cmd.is_turnstile_status(),
+                cmd.is_query(),
+            ];
+
+            let count = categories.iter().filter(|&&x| x).count();
+
+            assert_eq!(
+                count, 1,
+                "Command {:?} belongs to {} categories (expected 1)",
+                cmd, count
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_commands_are_categorized() {
+        // Verify every command has at least one category
+        for cmd in all_command_codes() {
+            let is_categorized = cmd.is_access_control()
+                || cmd.is_management()
+                || cmd.is_turnstile_status()
+                || cmd.is_query();
+
+            assert!(
+                is_categorized,
+                "Command {:?} is not categorized in any category",
                 cmd
             );
         }
