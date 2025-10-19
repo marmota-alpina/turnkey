@@ -1,4 +1,4 @@
-use crate::{commands::CommandCode, message::Message};
+use crate::{commands::CommandCode, field::FieldData, message::Message};
 use bytes::{BufMut, Bytes, BytesMut};
 use std::fmt;
 use turnkey_core::{DeviceId, Error, Result, constants::*};
@@ -49,7 +49,7 @@ use turnkey_core::{DeviceId, Error, Result, constants::*};
 ///
 /// # Basic Usage
 /// ```
-/// use turnkey_protocol::{Frame, Message, CommandCode};
+/// use turnkey_protocol::{Frame, Message, CommandCode, FieldData};
 /// use turnkey_core::DeviceId;
 ///
 /// // Create a message
@@ -58,10 +58,10 @@ use turnkey_core::{DeviceId, Error, Result, constants::*};
 ///     device_id,
 ///     CommandCode::AccessRequest,
 ///     vec![
-///         "12345678".to_string(),
-///         "10/05/2025 12:46:06".to_string(),
-///         "1".to_string(),
-///         "0".to_string(),
+///         FieldData::new("12345678".to_string()).unwrap(),
+///         FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+///         FieldData::new("1".to_string()).unwrap(),
+///         FieldData::new("0".to_string()).unwrap(),
 ///     ],
 /// )
 /// .unwrap();
@@ -264,7 +264,7 @@ impl From<Message> for Frame {
         // - Protocol ID: 4 bytes (REON)
         // - Command: ~5 bytes average
         // - Fields: sum of field lengths + delimiters
-        let fields_size: usize = msg.fields.iter().map(|f| f.len() + 1).sum(); // +1 for delimiter
+        let fields_size: usize = msg.fields.iter().map(|f| f.as_str().len() + 1).sum(); // +1 for delimiter
         let capacity = 13 + fields_size + 1; // +1 for trailing delimiter if fields exist
 
         let mut buffer = String::with_capacity(capacity);
@@ -284,7 +284,7 @@ impl From<Message> for Frame {
         if !msg.fields.is_empty() {
             for field in &msg.fields {
                 buffer.push_str(DELIMITER_FIELD);
-                buffer.push_str(field);
+                buffer.push_str(field.as_str());
             }
             buffer.push_str(DELIMITER_FIELD);
         }
@@ -318,7 +318,7 @@ fn validate_protocol_id(part: &str) -> Result<()> {
 }
 
 /// Parse command and fields from the remaining protocol parts
-fn parse_command_and_fields(parts: &[&str]) -> Result<(CommandCode, Vec<String>)> {
+fn parse_command_and_fields(parts: &[&str]) -> Result<(CommandCode, Vec<FieldData>)> {
     if parts.is_empty() {
         return Err(Error::InvalidMessageFormat {
             message: "Missing command part".to_string(),
@@ -333,13 +333,13 @@ fn parse_command_and_fields(parts: &[&str]) -> Result<(CommandCode, Vec<String>)
     let command = CommandCode::parse(field_parts[0])?;
 
     // Remaining parts are data fields (filter out empty strings)
-    let fields: Vec<String> = field_parts[1..]
+    let fields: Result<Vec<FieldData>> = field_parts[1..]
         .iter()
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(|s| FieldData::new(s.to_string()))
         .collect();
 
-    Ok((command, fields))
+    Ok((command, fields?))
 }
 
 /// Convert Frame to Message with validation
@@ -462,11 +462,15 @@ mod tests {
 
     #[test]
     fn test_message_to_frame_conversion() {
+        use crate::field::FieldData;
         let device_id = DeviceId::new(15).unwrap();
         let msg = Message::new(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string(), "10/05/2025 12:46:06".to_string()],
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(),
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+            ],
         )
         .unwrap();
 
@@ -527,11 +531,15 @@ mod tests {
 
     #[test]
     fn test_round_trip_conversion() {
+        use crate::field::FieldData;
         let device_id = DeviceId::new(15).unwrap();
         let original_msg = Message::new(
             device_id,
             CommandCode::GrantExit,
-            vec!["5".to_string(), "Acesso liberado".to_string()],
+            vec![
+                FieldData::new("5".to_string()).unwrap(),
+                FieldData::new("Acesso liberado".to_string()).unwrap(),
+            ],
         )
         .unwrap();
 
@@ -572,24 +580,21 @@ mod tests {
 
     #[test]
     fn test_frame_with_special_characters_fails() {
-        // Fields containing delimiters should cause an error
-        let device_id = DeviceId::new(15).unwrap();
-        let result = Message::new(
-            device_id,
-            CommandCode::GrantExit,
-            vec!["Field]with]delimiters".to_string()],
-        );
+        use crate::field::FieldData;
+        // Fields containing delimiters should cause an error at FieldData construction
+        let result = FieldData::new("Field]with]delimiters".to_string());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_frame_with_safe_special_characters() {
+        use crate::field::FieldData;
         // Safe special characters that are not protocol delimiters
         let device_id = DeviceId::new(15).unwrap();
         let msg = Message::new(
             device_id,
             CommandCode::GrantExit,
-            vec!["Field with spaces & symbols!".to_string()],
+            vec![FieldData::new("Field with spaces & symbols!".to_string()).unwrap()],
         )
         .unwrap();
 
@@ -601,11 +606,12 @@ mod tests {
 
     #[test]
     fn test_message_with_checksum_to_frame() {
+        use crate::field::FieldData;
         let device_id = DeviceId::new(15).unwrap();
         let mut msg = Message::new(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string()],
+            vec![FieldData::new("12345678".to_string()).unwrap()],
         )
         .unwrap();
 
@@ -659,9 +665,12 @@ mod tests {
 
     #[test]
     fn test_maximum_fields() {
+        use crate::field::FieldData;
         let device_id = DeviceId::new(15).unwrap();
-        let fields: Vec<String> = (0..100).map(|i| format!("field{}", i)).collect();
-        let msg = Message::new(device_id, CommandCode::SendCards, fields.clone()).unwrap();
+        let fields: Vec<FieldData> = (0..100)
+            .map(|i| FieldData::new(format!("field{}", i)).unwrap())
+            .collect();
+        let msg = Message::new(device_id, CommandCode::SendCards, fields).unwrap();
         let frame = Frame::from(msg);
 
         let recovered = Message::try_from(frame).unwrap();
