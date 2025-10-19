@@ -46,7 +46,7 @@ jobs:
             artifact_name: turnkey-cli
             asset_name: turnkey-linux-armv7
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -89,7 +89,7 @@ jobs:
     needs: build-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Publish turnkey-core
         run: cd turnkey-core && cargo publish --token ${{ secrets.CARGO_TOKEN }} || true
