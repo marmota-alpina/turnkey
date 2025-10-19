@@ -216,6 +216,29 @@ impl CommandCode {
             CommandCode::ReceiveConfig => "RC",
         }
     }
+
+    /// Returns the length of the command code in bytes
+    ///
+    /// This is useful for capacity calculations when encoding messages.
+    ///
+    /// Note: `is_empty()` is not provided because command codes are constants
+    /// with fixed lengths and are never empty.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::CommandCode;
+    ///
+    /// let cmd = CommandCode::AccessRequest;
+    /// assert_eq!(cmd.len(), 5); // "000+0"
+    ///
+    /// let cmd = CommandCode::QueryStatus;
+    /// assert_eq!(cmd.len(), 2); // "RQ"
+    /// ```
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.as_str().len()
+    }
 }
 
 impl fmt::Display for CommandCode {
@@ -227,6 +250,35 @@ impl fmt::Display for CommandCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Returns all command codes for comprehensive testing.
+    ///
+    /// This helper ensures all tests use the same complete set of commands,
+    /// preventing synchronization issues when new commands are added to the enum.
+    fn all_command_codes() -> Vec<CommandCode> {
+        vec![
+            // Access control commands
+            CommandCode::AccessRequest,
+            CommandCode::GrantBoth,
+            CommandCode::GrantManual,
+            CommandCode::GrantEntry,
+            CommandCode::GrantExit,
+            CommandCode::DenyAccess,
+            // Turnstile status commands
+            CommandCode::WaitingRotation,
+            CommandCode::RotationCompleted,
+            CommandCode::RotationTimeout,
+            // Management commands
+            CommandCode::SendConfig,
+            CommandCode::SendCards,
+            CommandCode::SendUsers,
+            CommandCode::SendBiometrics,
+            CommandCode::SendDateTime,
+            CommandCode::ReceiveLogs,
+            CommandCode::QueryStatus,
+            CommandCode::ReceiveConfig,
+        ]
+    }
 
     #[test]
     fn test_command_code_parse() {
@@ -292,27 +344,7 @@ mod tests {
     #[test]
     fn test_command_code_display_consistency() {
         // Verify that Display trait produces same output as as_str()
-        let all_commands = vec![
-            CommandCode::AccessRequest,
-            CommandCode::GrantBoth,
-            CommandCode::GrantManual,
-            CommandCode::GrantEntry,
-            CommandCode::GrantExit,
-            CommandCode::DenyAccess,
-            CommandCode::WaitingRotation,
-            CommandCode::RotationCompleted,
-            CommandCode::RotationTimeout,
-            CommandCode::SendConfig,
-            CommandCode::SendCards,
-            CommandCode::SendUsers,
-            CommandCode::SendBiometrics,
-            CommandCode::SendDateTime,
-            CommandCode::ReceiveLogs,
-            CommandCode::QueryStatus,
-            CommandCode::ReceiveConfig,
-        ];
-
-        for cmd in all_commands {
+        for cmd in all_command_codes() {
             assert_eq!(format!("{}", cmd), cmd.as_str());
         }
     }
@@ -327,5 +359,65 @@ mod tests {
         let cmd = CommandCode::QueryStatus;
         let log_entry = format!("[{}] Device query initiated", cmd);
         assert_eq!(log_entry, "[RQ] Device query initiated");
+    }
+
+    #[test]
+    fn test_command_code_len() {
+        // Test length calculation for various command codes
+        assert_eq!(CommandCode::AccessRequest.len(), 5); // "000+0"
+        assert_eq!(CommandCode::GrantBoth.len(), 4); // "00+1"
+        assert_eq!(CommandCode::GrantManual.len(), 4); // "00+4"
+        assert_eq!(CommandCode::GrantEntry.len(), 4); // "00+5"
+        assert_eq!(CommandCode::GrantExit.len(), 4); // "00+6"
+        assert_eq!(CommandCode::DenyAccess.len(), 5); // "00+30"
+        assert_eq!(CommandCode::WaitingRotation.len(), 6); // "000+80"
+        assert_eq!(CommandCode::RotationCompleted.len(), 6); // "000+81"
+        assert_eq!(CommandCode::RotationTimeout.len(), 6); // "000+82"
+        assert_eq!(CommandCode::SendConfig.len(), 2); // "EC"
+        assert_eq!(CommandCode::SendCards.len(), 4); // "ECAR"
+        assert_eq!(CommandCode::SendUsers.len(), 2); // "EU"
+        assert_eq!(CommandCode::SendBiometrics.len(), 2); // "ED"
+        assert_eq!(CommandCode::SendDateTime.len(), 2); // "EH"
+        assert_eq!(CommandCode::ReceiveLogs.len(), 2); // "ER"
+        assert_eq!(CommandCode::QueryStatus.len(), 2); // "RQ"
+        assert_eq!(CommandCode::ReceiveConfig.len(), 2); // "RC"
+    }
+
+    #[test]
+    fn test_command_code_len_matches_as_str() {
+        // Verify that len() returns same value as as_str().len()
+        for cmd in all_command_codes() {
+            assert_eq!(cmd.len(), cmd.as_str().len());
+            // Verify invariant: command codes are never empty
+            assert!(
+                cmd.len() > 0,
+                "Command code {:?} should never be empty",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_command_codes_is_complete() {
+        // Ensures all_command_codes() is updated when new variants are added.
+        // If a new CommandCode variant is added, update all_command_codes() and this count.
+        let commands = all_command_codes();
+
+        assert_eq!(
+            commands.len(),
+            17,
+            "all_command_codes() must include all CommandCode variants. \
+             If you added a new command, update all_command_codes() and this assertion."
+        );
+
+        // Verify no duplicates in the helper
+        let mut seen = std::collections::HashSet::new();
+        for cmd in commands {
+            assert!(
+                seen.insert(format!("{:?}", cmd)),
+                "Duplicate command found in all_command_codes(): {:?}",
+                cmd
+            );
+        }
     }
 }

@@ -15,6 +15,11 @@ pub const END_BYTE: u8 = 0x03; // ETX
 /// Frame overhead (STX + ETX = 2 bytes)
 pub const FRAME_OVERHEAD: usize = 2;
 
+/// Frame capacity calculation components
+pub const DEVICE_ID_LENGTH: usize = 2; // Zero-padded to 2 digits (01-99)
+pub const PROTOCOL_ID_LENGTH: usize = 4; // "REON"
+pub const BASE_DELIMITER_COUNT: usize = 2; // Two '+' separators (ID+REON+CMD)
+
 /// Timeouts (milliseconds)
 pub const DEFAULT_ONLINE_TIMEOUT: u64 = 3000;
 pub const MIN_ONLINE_TIMEOUT: u64 = 500;
