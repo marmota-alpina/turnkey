@@ -194,7 +194,9 @@ pub fn format_message(msg: &Message) -> String {
 
     // Frame::to_string() returns Result, but we know it will succeed
     // because we just created the frame from a valid Message
-    frame.to_string().expect("Frame from valid Message should always convert to string")
+    frame
+        .to_string()
+        .expect("Frame from valid Message should always convert to string")
 }
 
 #[cfg(test)]
@@ -292,7 +294,7 @@ mod tests {
         // Frame should have checksum
         assert!(frame.checksum().is_some());
         // Verify checksum is valid
-        assert_eq!(frame.verify_checksum().unwrap(), true);
+        assert!(frame.verify_checksum().unwrap());
     }
 
     #[test]

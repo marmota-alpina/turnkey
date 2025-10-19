@@ -558,12 +558,12 @@ mod tests {
         let mut frame = Frame::from_string("15+REON+000+0", false);
 
         // No checksum set
-        assert_eq!(frame.verify_checksum().unwrap(), false);
+        assert!(!frame.verify_checksum().unwrap());
 
         // Set correct checksum
         let checksum = frame.calculate_checksum();
         frame.set_checksum(checksum);
-        assert_eq!(frame.verify_checksum().unwrap(), true);
+        assert!(frame.verify_checksum().unwrap());
 
         // Set wrong checksum
         frame.set_checksum("FF".to_string());
