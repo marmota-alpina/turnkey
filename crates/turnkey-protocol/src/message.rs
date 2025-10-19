@@ -1,5 +1,5 @@
 use crate::commands::CommandCode;
-use crate::validation::validate_field;
+use crate::field::FieldData;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use turnkey_core::{DeviceId, Error, HenryTimestamp, Result};
@@ -11,14 +11,17 @@ use turnkey_core::{DeviceId, Error, HenryTimestamp, Result};
 ///
 /// # Example
 /// ```
-/// use turnkey_protocol::{Message, CommandCode};
+/// use turnkey_protocol::{Message, CommandCode, FieldData};
 /// use turnkey_core::DeviceId;
 ///
 /// let device_id = DeviceId::new(15).unwrap();
 /// let msg = Message::new(
 ///     device_id,
 ///     CommandCode::AccessRequest,
-///     vec!["12345678".to_string(), "10/05/2025 12:46:06".to_string()],
+///     vec![
+///         FieldData::new("12345678".to_string()).unwrap(),
+///         FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+///     ],
 /// )
 /// .unwrap();
 /// ```
@@ -31,7 +34,7 @@ pub struct Message {
     pub command: CommandCode,
 
     /// Vector of data fields (can be empty for some commands)
-    pub fields: Vec<String>,
+    pub fields: Vec<FieldData>,
 
     /// Optional checksum for message integrity verification
     pub checksum: Option<String>,
@@ -44,15 +47,26 @@ impl Message {
     /// Create a new message with validation
     ///
     /// This is the preferred constructor that returns errors instead of panicking.
+    /// Fields are validated at construction through the FieldData type.
     ///
     /// # Errors
-    /// Returns `Error::InvalidFieldFormat` if any field contains protocol delimiters
-    pub fn new(device_id: DeviceId, command: CommandCode, fields: Vec<String>) -> Result<Self> {
-        // Validate all fields
-        for field in &fields {
-            validate_field(field)?;
-        }
-
+    /// Returns error if device_id or command are invalid.
+    /// Field validation is enforced by the FieldData type itself.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::{Message, CommandCode, FieldData};
+    /// use turnkey_core::DeviceId;
+    ///
+    /// let device_id = DeviceId::new(15).unwrap();
+    /// let msg = Message::new(
+    ///     device_id,
+    ///     CommandCode::AccessRequest,
+    ///     vec![FieldData::new("12345678".to_string()).unwrap()],
+    /// ).unwrap();
+    /// ```
+    pub fn new(device_id: DeviceId, command: CommandCode, fields: Vec<FieldData>) -> Result<Self> {
+        // Fields are already validated by FieldData type
         Ok(Message {
             device_id,
             command,
@@ -64,16 +78,27 @@ impl Message {
 
     /// Create a new message without validation (for testing or trusted inputs)
     ///
-    /// Panics if any field contains protocol delimiters.
+    /// Since fields are already validated by FieldData type, this is now
+    /// equivalent to `new()` but kept for API compatibility.
     ///
-    /// Safety Only use this when you are certain the fields are valid. Prefer `new()` for
-    /// untrusted input.
-    pub fn new_unchecked(device_id: DeviceId, command: CommandCode, fields: Vec<String>) -> Self {
-        // Validate fields for protocol safety
-        for field in &fields {
-            validate_field(field).expect("Field validation failed");
-        }
-
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::{Message, CommandCode, FieldData};
+    /// use turnkey_core::DeviceId;
+    ///
+    /// let device_id = DeviceId::new(15).unwrap();
+    /// let msg = Message::new_unchecked(
+    ///     device_id,
+    ///     CommandCode::AccessRequest,
+    ///     vec![FieldData::new("12345678".to_string()).unwrap()],
+    /// );
+    /// ```
+    pub fn new_unchecked(
+        device_id: DeviceId,
+        command: CommandCode,
+        fields: Vec<FieldData>,
+    ) -> Self {
+        // Fields are already validated by FieldData type
         Message {
             device_id,
             command,
@@ -86,28 +111,30 @@ impl Message {
     /// Create a new message with validation (deprecated alias for `new()`)
     ///
     /// # Errors
-    /// Returns `Error::InvalidFieldFormat` if any field contains protocol delimiters
+    /// Returns error if construction fails
     #[deprecated(since = "0.1.0", note = "Use `new()` instead - it now returns Result")]
-    pub fn try_new(device_id: DeviceId, command: CommandCode, fields: Vec<String>) -> Result<Self> {
+    pub fn try_new(
+        device_id: DeviceId,
+        command: CommandCode,
+        fields: Vec<FieldData>,
+    ) -> Result<Self> {
         Self::new(device_id, command, fields)
     }
 
     /// Create a new message with all fields including checksum and timestamp
     ///
+    /// Fields are validated at construction through the FieldData type.
+    ///
     /// # Errors
-    /// Returns `Error::InvalidFieldFormat` if any field contains protocol delimiters
+    /// Returns error if construction fails
     pub fn with_metadata(
         device_id: DeviceId,
         command: CommandCode,
-        fields: Vec<String>,
+        fields: Vec<FieldData>,
         checksum: Option<String>,
         timestamp: Option<HenryTimestamp>,
     ) -> Result<Self> {
-        // Validate fields for protocol safety
-        for field in &fields {
-            validate_field(field)?;
-        }
-
+        // Fields are already validated by FieldData type
         Ok(Message {
             device_id,
             command,
@@ -119,22 +146,16 @@ impl Message {
 
     /// Create a new message with all fields without validation (for testing or trusted inputs)
     ///
-    /// Panics if any field contains protocol delimiters.
-    ///
-    /// Safety Only use this when you are certain the fields are valid. Prefer `with_metadata()` for
-    /// untrusted input.
+    /// Since fields are already validated by FieldData type, this is now
+    /// equivalent to `with_metadata()` but kept for API compatibility.
     pub fn with_metadata_unchecked(
         device_id: DeviceId,
         command: CommandCode,
-        fields: Vec<String>,
+        fields: Vec<FieldData>,
         checksum: Option<String>,
         timestamp: Option<HenryTimestamp>,
     ) -> Self {
-        // Validate fields for protocol safety
-        for field in &fields {
-            validate_field(field).expect("Field validation failed");
-        }
-
+        // Fields are already validated by FieldData type
         Message {
             device_id,
             command,
@@ -148,7 +169,7 @@ impl Message {
     ///
     /// Returns None if the index is out of bounds.
     pub fn field(&self, index: usize) -> Option<&str> {
-        self.fields.get(index).map(|s| s.as_str())
+        self.fields.get(index).map(|f| f.as_str())
     }
 
     /// Get required field or return error
@@ -255,7 +276,10 @@ mod tests {
         let msg = Message::new(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string(), "10/05/2025 12:46:06".to_string()],
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(),
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+            ],
         )
         .unwrap();
 
@@ -274,7 +298,7 @@ mod tests {
         let msg = Message::with_metadata(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string()],
+            vec![FieldData::new("12345678".to_string()).unwrap()],
             Some("AB".to_string()),
             Some(timestamp),
         )
@@ -291,7 +315,7 @@ mod tests {
         let msg = Message::new(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string()],
+            vec![FieldData::new("12345678".to_string()).unwrap()],
         )
         .unwrap();
 
@@ -332,7 +356,10 @@ mod tests {
         let msg = Message::new(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string(), "data2".to_string()],
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(),
+                FieldData::new("data2".to_string()).unwrap(),
+            ],
         )
         .unwrap();
 
@@ -353,50 +380,33 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Field validation failed")]
-    fn test_field_with_field_delimiter_panics() {
-        let device_id = DeviceId::new(15).unwrap();
-        let _msg = Message::new_unchecked(
-            device_id,
-            CommandCode::AccessRequest,
-            vec!["field]with]delimiters".to_string()],
-        );
+    fn test_field_with_field_delimiter_rejected() {
+        // FieldData construction should fail for invalid fields
+        let result = FieldData::new("field]with]delimiters".to_string());
+        assert!(result.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "Field validation failed")]
-    fn test_field_with_device_delimiter_panics() {
-        let device_id = DeviceId::new(15).unwrap();
-        let _msg = Message::new_unchecked(
-            device_id,
-            CommandCode::AccessRequest,
-            vec!["field+with+plus".to_string()],
-        );
+    fn test_field_with_device_delimiter_rejected() {
+        // FieldData construction should fail for invalid fields
+        let result = FieldData::new("field+with+plus".to_string());
+        assert!(result.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "Field validation failed")]
-    fn test_field_with_subfield_delimiter_panics() {
-        let device_id = DeviceId::new(15).unwrap();
-        let _msg = Message::new_unchecked(
-            device_id,
-            CommandCode::AccessRequest,
-            vec!["field[with[brackets".to_string()],
-        );
+    fn test_field_with_subfield_delimiter_rejected() {
+        // FieldData construction should fail for invalid fields
+        let result = FieldData::new("field[with[brackets".to_string());
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_try_new_with_invalid_field() {
-        let device_id = DeviceId::new(15).unwrap();
-        #[allow(deprecated)]
-        let result = Message::try_new(
-            device_id,
-            CommandCode::AccessRequest,
-            vec!["field]invalid".to_string()],
-        );
+        // FieldData construction should fail for invalid fields
+        let field_result = FieldData::new("field]invalid".to_string());
+        assert!(field_result.is_err());
 
-        assert!(result.is_err());
-        if let Err(Error::InvalidFieldFormat { message }) = result {
+        if let Err(Error::InvalidFieldFormat { message }) = field_result {
             assert!(message.contains("reserved protocol delimiters"));
         } else {
             panic!("Expected InvalidFieldFormat error");
@@ -410,7 +420,10 @@ mod tests {
         let result = Message::try_new(
             device_id,
             CommandCode::AccessRequest,
-            vec!["12345678".to_string(), "10/05/2025 12:46:06".to_string()],
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(),
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+            ],
         );
 
         assert!(result.is_ok());

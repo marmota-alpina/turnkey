@@ -1,4 +1,4 @@
-use crate::{commands::CommandCode, frame::Frame, message::Message, validation::validate_field};
+use crate::{commands::CommandCode, field::FieldData, frame::Frame, message::Message};
 use turnkey_core::{DeviceId, HenryTimestamp, Result};
 
 /// Builder for constructing Henry protocol messages with a fluent API
@@ -8,13 +8,13 @@ use turnkey_core::{DeviceId, HenryTimestamp, Result};
 ///
 /// # Example
 /// ```
-/// use turnkey_protocol::{MessageBuilder, CommandCode};
+/// use turnkey_protocol::{MessageBuilder, CommandCode, FieldData};
 /// use turnkey_core::DeviceId;
 ///
 /// let device_id = DeviceId::new(15).unwrap();
 /// let msg = MessageBuilder::new(device_id, CommandCode::AccessRequest)
-///     .field("12345678").unwrap()
-///     .field("10/05/2025 12:46:06").unwrap()
+///     .field(FieldData::new("12345678".to_string()).unwrap())
+///     .field(FieldData::new("10/05/2025 12:46:06".to_string()).unwrap())
 ///     .with_auto_checksum()
 ///     .build()
 ///     .unwrap();
@@ -22,7 +22,7 @@ use turnkey_core::{DeviceId, HenryTimestamp, Result};
 pub struct MessageBuilder {
     device_id: DeviceId,
     command: CommandCode,
-    fields: Vec<String>,
+    fields: Vec<FieldData>,
     checksum: Option<String>,
     timestamp: Option<HenryTimestamp>,
     auto_checksum: bool,
@@ -44,26 +44,46 @@ impl MessageBuilder {
     /// Add a single field to the message
     ///
     /// Fields are added in order and will appear in the wire format in the same order.
+    /// Fields are validated at construction through the FieldData type.
     ///
-    /// # Errors
-    /// Returns error if the field contains protocol delimiters (], +, or [).
-    pub fn field(mut self, value: impl Into<String>) -> Result<Self> {
-        let field = value.into();
-        validate_field(&field)?;
-        self.fields.push(field);
-        Ok(self)
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::{MessageBuilder, CommandCode, FieldData};
+    /// use turnkey_core::DeviceId;
+    ///
+    /// let device_id = DeviceId::new(15).unwrap();
+    /// let msg = MessageBuilder::new(device_id, CommandCode::AccessRequest)
+    ///     .field(FieldData::new("12345678".to_string()).unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn field(mut self, value: FieldData) -> Self {
+        self.fields.push(value);
+        self
     }
 
     /// Add multiple fields to the message
     ///
-    /// # Errors
-    /// Returns error if any field contains protocol delimiters (], +, or [).
-    pub fn fields(mut self, values: Vec<String>) -> Result<Self> {
-        for field in &values {
-            validate_field(field)?;
-        }
+    /// Fields are validated at construction through the FieldData type.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::{MessageBuilder, CommandCode, FieldData};
+    /// use turnkey_core::DeviceId;
+    ///
+    /// let device_id = DeviceId::new(15).unwrap();
+    /// let fields = vec![
+    ///     FieldData::new("field1".to_string()).unwrap(),
+    ///     FieldData::new("field2".to_string()).unwrap(),
+    /// ];
+    /// let msg = MessageBuilder::new(device_id, CommandCode::AccessRequest)
+    ///     .fields(fields)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn fields(mut self, values: Vec<FieldData>) -> Self {
         self.fields.extend(values);
-        Ok(self)
+        self
     }
 
     /// Set a specific checksum value
@@ -107,13 +127,14 @@ impl MessageBuilder {
 
     /// Build the message
     ///
+    /// Fields are already validated by FieldData type.
+    ///
     /// # Errors
     /// Returns error if validation fails
     pub fn build(self) -> Result<Message> {
         self.validate()?;
 
-        // Fields are already validated by field()/fields() methods,
-        // so we can use unchecked here for better performance
+        // Fields are already validated by FieldData type
         let msg = Message::with_metadata_unchecked(
             self.device_id,
             self.command,
@@ -173,14 +194,14 @@ impl MessageBuilder {
 ///
 /// # Example
 /// ```
-/// use turnkey_protocol::{Message, CommandCode, format_message};
+/// use turnkey_protocol::{Message, CommandCode, FieldData, format_message};
 /// use turnkey_core::DeviceId;
 ///
 /// let device_id = DeviceId::new(15).unwrap();
 /// let msg = Message::new(
 ///     device_id,
 ///     CommandCode::AccessRequest,
-///     vec!["12345678".to_string()],
+///     vec![FieldData::new("12345678".to_string()).unwrap()],
 /// )
 /// .unwrap();
 ///
@@ -206,14 +227,10 @@ mod tests {
     #[test]
     fn test_build_access_request() {
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
-            .field("10/05/2025 12:46:06")
-            .unwrap()
-            .field("1")
-            .unwrap()
-            .field("0")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
+            .field(FieldData::new("10/05/2025 12:46:06".to_string()).unwrap())
+            .field(FieldData::new("1".to_string()).unwrap())
+            .field(FieldData::new("0".to_string()).unwrap())
             .build_string()
             .unwrap();
 
@@ -223,10 +240,8 @@ mod tests {
     #[test]
     fn test_build_grant_response() {
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::GrantExit)
-            .field("5")
-            .unwrap()
-            .field("Acesso liberado")
-            .unwrap()
+            .field(FieldData::new("5".to_string()).unwrap())
+            .field(FieldData::new("Acesso liberado".to_string()).unwrap())
             .build_string()
             .unwrap();
 
@@ -244,10 +259,12 @@ mod tests {
 
     #[test]
     fn test_build_with_fields_vec() {
-        let fields = vec!["field1".to_string(), "field2".to_string()];
+        let fields = vec![
+            FieldData::new("field1".to_string()).unwrap(),
+            FieldData::new("field2".to_string()).unwrap(),
+        ];
         let msg = MessageBuilder::new(DeviceId::new(10).unwrap(), CommandCode::SendCards)
             .fields(fields)
-            .unwrap()
             .build_string()
             .unwrap();
 
@@ -257,8 +274,7 @@ mod tests {
     #[test]
     fn test_build_message_object() {
         let msg = MessageBuilder::new(DeviceId::new(5).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .build()
             .unwrap();
 
@@ -271,8 +287,7 @@ mod tests {
     #[test]
     fn test_build_with_checksum() {
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .checksum("AB")
             .build()
             .unwrap();
@@ -285,8 +300,7 @@ mod tests {
     fn test_build_with_auto_checksum() {
         // Auto-checksum is applied at Frame level, not Message level
         let frame = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .with_auto_checksum()
             .build_frame()
             .unwrap();
@@ -300,8 +314,7 @@ mod tests {
     #[test]
     fn test_explicit_checksum_overrides_auto() {
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .checksum("FF")
             .with_auto_checksum()
             .build()
@@ -315,8 +328,7 @@ mod tests {
     fn test_build_with_timestamp() {
         let timestamp = HenryTimestamp::parse("10/05/2025 12:46:06").unwrap();
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .timestamp(timestamp)
             .build()
             .unwrap();
@@ -327,8 +339,7 @@ mod tests {
     #[test]
     fn test_build_with_current_timestamp() {
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .with_current_timestamp()
             .build()
             .unwrap();
@@ -339,8 +350,7 @@ mod tests {
     #[test]
     fn test_build_frame() {
         let frame = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .build_frame()
             .unwrap();
 
@@ -351,8 +361,7 @@ mod tests {
     #[test]
     fn test_build_unchecked() {
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .build_unchecked();
 
         assert_eq!(msg.device_id.as_u8(), 15);
@@ -364,7 +373,10 @@ mod tests {
         let msg = Message::new(
             DeviceId::new(15).unwrap(),
             CommandCode::GrantExit,
-            vec!["5".to_string(), "Acesso liberado".to_string()],
+            vec![
+                FieldData::new("5".to_string()).unwrap(),
+                FieldData::new("Acesso liberado".to_string()).unwrap(),
+            ],
         )
         .unwrap();
 
@@ -385,10 +397,8 @@ mod tests {
     fn test_builder_fluent_api() {
         // Test that builder methods can be chained
         let msg = MessageBuilder::new(DeviceId::new(15).unwrap(), CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
-            .field("10/05/2025 12:46:06")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
+            .field(FieldData::new("10/05/2025 12:46:06".to_string()).unwrap())
             .checksum("AB")
             .with_current_timestamp()
             .build()
@@ -405,14 +415,12 @@ mod tests {
         let device_id = DeviceId::new(15).unwrap();
 
         let msg1 = MessageBuilder::new(device_id, CommandCode::AccessRequest)
-            .field("12345678")
-            .unwrap()
+            .field(FieldData::new("12345678".to_string()).unwrap())
             .build()
             .unwrap();
 
         let msg2 = MessageBuilder::new(device_id, CommandCode::GrantExit)
-            .field("5")
-            .unwrap()
+            .field(FieldData::new("5".to_string()).unwrap())
             .build()
             .unwrap();
 

@@ -1,4 +1,4 @@
-use crate::{commands::CommandCode, message::Message};
+use crate::{commands::CommandCode, field::FieldData, message::Message};
 use turnkey_core::{DeviceId, Error, Result, constants::*};
 
 pub struct MessageParser;
@@ -52,17 +52,17 @@ impl MessageParser {
         let command = CommandCode::parse(command_str)?;
 
         // Parse fields (separated by ])
-        let fields = if !rest_fields.is_empty() {
+        let fields: Result<Vec<FieldData>> = if !rest_fields.is_empty() {
             rest_fields
                 .split(DELIMITER_FIELD)
-                .map(|s| s.to_string())
                 .filter(|s| !s.is_empty())
+                .map(|s| FieldData::new(s.to_string()))
                 .collect()
         } else {
-            Vec::new()
+            Ok(Vec::new())
         };
 
-        Message::new(device_id, command, fields)
+        Message::new(device_id, command, fields?)
     }
 }
 
