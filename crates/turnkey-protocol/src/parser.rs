@@ -13,30 +13,29 @@ impl MessageParser {
         let mut parts = input.splitn(2, DELIMITER_DEVICE);
 
         // Parse device ID
-        let device_id_str = parts
-            .next()
-            .ok_or_else(|| Error::InvalidMessageFormat("Missing device ID".to_string()))?;
+        let device_id_str = parts.next().ok_or_else(|| Error::InvalidMessageFormat {
+            message: "Missing device ID".to_string(),
+        })?;
         let device_id: DeviceId = device_id_str.parse()?;
 
         // Get rest of message
-        let rest = parts
-            .next()
-            .ok_or_else(|| Error::InvalidMessageFormat("Missing protocol ID".to_string()))?;
+        let rest = parts.next().ok_or_else(|| Error::InvalidMessageFormat {
+            message: "Missing protocol ID".to_string(),
+        })?;
 
         // Check for REON
         if !rest.starts_with(PROTOCOL_ID) {
-            return Err(Error::InvalidMessageFormat(format!(
-                "Expected '{}' protocol identifier",
-                PROTOCOL_ID
-            )));
+            return Err(Error::InvalidMessageFormat {
+                message: format!("Expected '{}' protocol identifier", PROTOCOL_ID),
+            });
         }
 
         // Remove REON+
         let rest = &rest[PROTOCOL_ID.len()..];
         if !rest.starts_with(DELIMITER_DEVICE) {
-            return Err(Error::InvalidMessageFormat(
-                "Missing delimiter after REON".to_string(),
-            ));
+            return Err(Error::InvalidMessageFormat {
+                message: "Missing delimiter after REON".to_string(),
+            });
         }
         let rest = &rest[1..]; // Skip '+'
 
@@ -63,7 +62,7 @@ impl MessageParser {
             Vec::new()
         };
 
-        Ok(Message::new(device_id, command, fields))
+        Message::new(device_id, command, fields)
     }
 }
 

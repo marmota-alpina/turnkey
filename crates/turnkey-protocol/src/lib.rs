@@ -1,9 +1,13 @@
 pub mod builder;
 pub mod commands;
+pub mod frame;
 pub mod message;
 pub mod parser;
+pub mod validation;
 
 pub use builder::{MessageBuilder, format_message};
 pub use commands::CommandCode;
+pub use frame::Frame;
 pub use message::{Message, MessageType};
 pub use parser::MessageParser;
+pub use validation::validate_field;

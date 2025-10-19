@@ -3,11 +3,11 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum Error {
     // Protocol errors
-    #[error("Invalid message format: {0}")]
-    InvalidMessageFormat(String),
+    #[error("Invalid message format: {message}")]
+    InvalidMessageFormat { message: String },
 
-    #[error("Invalid command code: {0}")]
-    InvalidCommandCode(String),
+    #[error("Invalid command code: {code}")]
+    InvalidCommandCode { code: String },
 
     #[error("Checksum mismatch: expected {expected}, got {actual}")]
     ChecksumMismatch { expected: String, actual: String },
@@ -16,11 +16,14 @@ pub enum Error {
     MissingField(String),
 
     // Hardware errors
-    #[error("Device not found: {0}")]
-    DeviceNotFound(String),
+    #[error("Device not found: {device_type} at {location}")]
+    DeviceNotFound {
+        device_type: String,
+        location: String,
+    },
 
-    #[error("Device connection failed: {0}")]
-    ConnectionFailed(String),
+    #[error("Device connection failed for {device}: {reason}")]
+    ConnectionFailed { device: String, reason: String },
 
     #[error("Hardware operation failed: {0}")]
     HardwareError(String),
@@ -47,6 +50,9 @@ pub enum Error {
 
     #[error("Invalid card format: {0}")]
     InvalidCardFormat(String),
+
+    #[error("Invalid field format: {message}")]
+    InvalidFieldFormat { message: String },
 
     #[error("Invalid state transition from {from} to {to}")]
     InvalidStateTransition { from: String, to: String },

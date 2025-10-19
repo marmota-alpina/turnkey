@@ -16,7 +16,7 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"  # 🚀 Edition 2024 com async traits nativos!
+edition = "2024"
 rust-version = "1.90"
 authors = ["Jeferson Ferreira <jeferson.mab@gmail.com>"]
 license = "MIT"

@@ -2,6 +2,7 @@ use crate::{Result, constants::*, error::Error};
 use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use subtle::ConstantTimeEq;
 
 /// Device identifier (2 digits, zero-padded)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -10,10 +11,12 @@ pub struct DeviceId(u8);
 impl DeviceId {
     pub fn new(id: u8) -> Result<Self> {
         if !(MIN_DEVICE_ID..=MAX_DEVICE_ID).contains(&id) {
-            return Err(Error::InvalidMessageFormat(format!(
-                "Device ID must be {}-{}, got {}",
-                MIN_DEVICE_ID, MAX_DEVICE_ID, id
-            )));
+            return Err(Error::InvalidMessageFormat {
+                message: format!(
+                    "Device ID must be {}-{}, got {}",
+                    MIN_DEVICE_ID, MAX_DEVICE_ID, id
+                ),
+            });
         }
         Ok(DeviceId(id))
     }
@@ -37,15 +40,19 @@ impl std::str::FromStr for DeviceId {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let id: u8 = s
-            .parse()
-            .map_err(|_| Error::InvalidMessageFormat(format!("Invalid device ID: {}", s)))?;
+        let id: u8 = s.parse().map_err(|_| Error::InvalidMessageFormat {
+            message: format!("Invalid device ID: {}", s),
+        })?;
         DeviceId::new(id)
     }
 }
 
 /// Card/badge number (3-20 characters)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// # Security
+/// This type implements constant-time comparison to prevent timing attacks
+/// when comparing card numbers during authentication.
+#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
 pub struct CardNumber(String);
 
 impl CardNumber {
@@ -95,6 +102,25 @@ impl std::str::FromStr for CardNumber {
     }
 }
 
+/// Constant-time comparison implementation for CardNumber
+///
+/// This prevents timing attacks by ensuring comparison takes the same time
+/// regardless of where the strings differ.
+impl PartialEq for CardNumber {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_bytes().ct_eq(other.0.as_bytes()).into()
+    }
+}
+
+/// Hash implementation for CardNumber
+///
+/// Implements standard hashing for use in hash-based collections.
+impl std::hash::Hash for CardNumber {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
 /// Access direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -110,10 +136,9 @@ impl AccessDirection {
             0 => Ok(AccessDirection::Undefined),
             1 => Ok(AccessDirection::Entry),
             2 => Ok(AccessDirection::Exit),
-            _ => Err(Error::InvalidMessageFormat(format!(
-                "Invalid direction: {}",
-                value
-            ))),
+            _ => Err(Error::InvalidMessageFormat {
+                message: format!("Invalid direction: {}", value),
+            }),
         }
     }
 
@@ -145,10 +170,9 @@ impl ReaderType {
         match value {
             1 => Ok(ReaderType::Rfid),
             5 => Ok(ReaderType::Biometric),
-            _ => Err(Error::InvalidMessageFormat(format!(
-                "Invalid reader type: {}",
-                value
-            ))),
+            _ => Err(Error::InvalidMessageFormat {
+                message: format!("Invalid reader type: {}", value),
+            }),
         }
     }
 
@@ -173,7 +197,9 @@ impl HenryTimestamp {
     /// Parse from Henry format: "10/05/2025 12:46:06"
     pub fn parse(s: &str) -> Result<Self> {
         let dt = chrono::NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S").map_err(|e| {
-            Error::InvalidMessageFormat(format!("Invalid timestamp '{}': {}", s, e))
+            Error::InvalidMessageFormat {
+                message: format!("Invalid timestamp '{}': {}", s, e),
+            }
         })?;
 
         Ok(HenryTimestamp(Local.from_local_datetime(&dt).unwrap()))
