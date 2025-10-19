@@ -71,6 +71,42 @@ impl FieldData {
         &self.0
     }
 
+    /// Returns the length of the field data in bytes
+    ///
+    /// This is useful for capacity calculations when encoding messages.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::FieldData;
+    ///
+    /// let field = FieldData::new("12345678".to_string()).unwrap();
+    /// assert_eq!(field.len(), 8);
+    ///
+    /// let empty = FieldData::new("".to_string()).unwrap();
+    /// assert_eq!(empty.len(), 0);
+    /// ```
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns true if the field data is empty
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::FieldData;
+    ///
+    /// let empty = FieldData::new("".to_string()).unwrap();
+    /// assert!(empty.is_empty());
+    ///
+    /// let field = FieldData::new("data".to_string()).unwrap();
+    /// assert!(!field.is_empty());
+    /// ```
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Convert field data into owned String
     ///
     /// # Example
@@ -383,5 +419,72 @@ mod tests {
 
         let field = FieldData::try_from("").unwrap();
         assert_eq!(field.as_str(), "");
+    }
+
+    #[test]
+    fn test_field_len() {
+        // Test length calculation for various field sizes
+        let field = FieldData::new("12345678".to_string()).unwrap();
+        assert_eq!(field.len(), 8);
+
+        let field = FieldData::new("10/05/2025 12:46:06".to_string()).unwrap();
+        assert_eq!(field.len(), 19);
+
+        let field = FieldData::new("test".to_string()).unwrap();
+        assert_eq!(field.len(), 4);
+
+        let field = FieldData::new("1".to_string()).unwrap();
+        assert_eq!(field.len(), 1);
+
+        let field = FieldData::new("".to_string()).unwrap();
+        assert_eq!(field.len(), 0);
+    }
+
+    #[test]
+    fn test_field_len_matches_as_str() {
+        // Verify that len() returns same value as as_str().len()
+        let test_values = vec![
+            "12345678",
+            "10/05/2025 12:46:06",
+            "Acesso liberado",
+            "test-value_123",
+            "",
+            "1",
+        ];
+
+        for value in test_values {
+            let field = FieldData::new(value.to_string()).unwrap();
+            assert_eq!(field.len(), field.as_str().len());
+            assert_eq!(field.len(), value.len());
+        }
+    }
+
+    #[test]
+    fn test_field_is_empty() {
+        // Test is_empty for empty field
+        let empty = FieldData::new("".to_string()).unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+
+        // Test is_empty for non-empty fields
+        let field = FieldData::new("data".to_string()).unwrap();
+        assert!(!field.is_empty());
+        assert_eq!(field.len(), 4);
+
+        let field = FieldData::new("12345678".to_string()).unwrap();
+        assert!(!field.is_empty());
+        assert_eq!(field.len(), 8);
+    }
+
+    #[test]
+    fn test_field_is_empty_consistency() {
+        // Verify that is_empty() is consistent with len() == 0
+        let test_values = vec!["", "x", "test", "longer string"];
+
+        for value in test_values {
+            let field = FieldData::new(value.to_string()).unwrap();
+            assert_eq!(field.is_empty(), value.is_empty());
+            assert_eq!(field.len(), value.len());
+        }
     }
 }

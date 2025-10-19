@@ -258,15 +258,9 @@ impl Frame {
 impl From<Message> for Frame {
     fn from(msg: Message) -> Self {
         // Build the protocol string: <ID>+REON+<COMMAND>+<DATA_FIELDS>
-        // Calculate approximate capacity:
-        // - Device ID: 2 bytes
-        // - Delimiters: 2 bytes (+ +)
-        // - Protocol ID: 4 bytes (REON)
-        // - Command: ~5 bytes average
-        // - Fields: sum of field lengths + delimiters
-        let fields_size: usize = msg.fields.iter().map(|f| f.as_str().len() + 1).sum(); // +1 for delimiter
-        let capacity = 13 + fields_size + 1; // +1 for trailing delimiter if fields exist
-
+        // Pre-allocate exact capacity to avoid reallocations.
+        // See Message::frame_capacity() for detailed capacity calculation.
+        let capacity = msg.frame_capacity();
         let mut buffer = String::with_capacity(capacity);
 
         // Device ID (zero-padded to 2 digits)
@@ -752,5 +746,94 @@ mod tests {
 
         // Should result in empty frame
         assert_eq!(unframed.size(), 0);
+    }
+
+    #[test]
+    fn test_frame_capacity_is_exact_with_fields() {
+        use crate::field::FieldData;
+        // Test with multiple fields to verify exact capacity calculation
+        let device_id = DeviceId::new(15).unwrap();
+        let msg = Message::new(
+            device_id,
+            CommandCode::AccessRequest,
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(),
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+                FieldData::new("1".to_string()).unwrap(),
+                FieldData::new("0".to_string()).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let frame = Frame::from(msg);
+        let frame_str = frame.to_string().unwrap();
+
+        // Expected format: 15+REON+000+0]12345678]10/05/2025 12:46:06]1]0]
+        // Calculate expected exact size:
+        // - Device ID: 2 bytes (15)
+        // - First delimiter: 1 byte (+)
+        // - Protocol ID: 4 bytes (REON)
+        // - Second delimiter: 1 byte (+)
+        // - Command: 5 bytes (000+0)
+        // - Field delimiters: 5 bytes (] before each field + trailing ])
+        // - Field content: 8 + 19 + 1 + 1 = 29 bytes
+        // Total: 2 + 1 + 4 + 1 + 5 + 5 + 29 = 47 bytes
+        assert_eq!(frame_str.len(), 47);
+        assert_eq!(frame_str, "15+REON+000+0]12345678]10/05/2025 12:46:06]1]0]");
+    }
+
+    #[test]
+    fn test_frame_capacity_is_exact_without_fields() {
+        // Test with no fields to verify exact capacity calculation
+        let device_id = DeviceId::new(1).unwrap();
+        let msg = Message::new(device_id, CommandCode::QueryStatus, vec![]).unwrap();
+
+        let frame = Frame::from(msg);
+        let frame_str = frame.to_string().unwrap();
+
+        // Expected format: 01+REON+RQ
+        // Calculate expected exact size:
+        // - Device ID: 2 bytes (01)
+        // - First delimiter: 1 byte (+)
+        // - Protocol ID: 4 bytes (REON)
+        // - Second delimiter: 1 byte (+)
+        // - Command: 2 bytes (RQ)
+        // - Field delimiters: 0 bytes (no fields)
+        // - Field content: 0 bytes
+        // Total: 2 + 1 + 4 + 1 + 2 = 10 bytes
+        assert_eq!(frame_str.len(), 10);
+        assert_eq!(frame_str, "01+REON+RQ");
+    }
+
+    #[test]
+    fn test_frame_capacity_is_exact_with_long_command() {
+        use crate::field::FieldData;
+        // Test with longer command code to verify exact capacity
+        let device_id = DeviceId::new(15).unwrap();
+        let msg = Message::new(
+            device_id,
+            CommandCode::GrantExit,
+            vec![
+                FieldData::new("5".to_string()).unwrap(),
+                FieldData::new("Acesso liberado".to_string()).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let frame = Frame::from(msg);
+        let frame_str = frame.to_string().unwrap();
+
+        // Expected format: 15+REON+00+6]5]Acesso liberado]
+        // Calculate expected exact size:
+        // - Device ID: 2 bytes (15)
+        // - First delimiter: 1 byte (+)
+        // - Protocol ID: 4 bytes (REON)
+        // - Second delimiter: 1 byte (+)
+        // - Command: 4 bytes (00+6)
+        // - Field delimiters: 3 bytes (] before each field + trailing ])
+        // - Field content: 1 + 15 = 16 bytes
+        // Total: 2 + 1 + 4 + 1 + 4 + 3 + 16 = 31 bytes
+        assert_eq!(frame_str.len(), 31);
+        assert_eq!(frame_str, "15+REON+00+6]5]Acesso liberado]");
     }
 }

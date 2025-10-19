@@ -186,6 +186,104 @@ impl Message {
         self.fields.len()
     }
 
+    /// Returns the total length of all fields in bytes (content only).
+    ///
+    /// This is useful for capacity calculations when encoding messages.
+    /// Returns the sum of all field content lengths, **excluding** field
+    /// delimiters which must be calculated separately based on field count.
+    ///
+    /// For complete frame size calculation, see `From<Message> for Frame`.
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::{Message, CommandCode, FieldData};
+    /// use turnkey_core::DeviceId;
+    ///
+    /// let device_id = DeviceId::new(15).unwrap();
+    /// let msg = Message::new(
+    ///     device_id,
+    ///     CommandCode::AccessRequest,
+    ///     vec![
+    ///         FieldData::new("12345678".to_string()).unwrap(),  // 8 bytes
+    ///         FieldData::new("data".to_string()).unwrap(),       // 4 bytes
+    ///     ],
+    /// ).unwrap();
+    ///
+    /// assert_eq!(msg.fields_len(), 12); // 8 + 4
+    /// ```
+    #[inline]
+    pub fn fields_len(&self) -> usize {
+        self.fields.iter().map(|f| f.len()).sum()
+    }
+
+    /// Calculates the exact frame capacity needed to encode this message.
+    ///
+    /// Returns the total number of bytes required for the wire format,
+    /// allowing pre-allocation without reallocations during frame construction.
+    ///
+    /// # Frame Structure
+    ///
+    /// The capacity includes all components of the Henry protocol message:
+    /// - Device ID: 2 bytes (zero-padded, e.g., "01", "15", "99")
+    /// - First delimiter: 1 byte (+)
+    /// - Protocol ID: 4 bytes (REON)
+    /// - Second delimiter: 1 byte (+)
+    /// - Command: variable length (2-6 bytes depending on command)
+    /// - Field delimiters: (fields.len() + 1) bytes if fields exist, 0 otherwise
+    /// - Field content: sum of all field lengths
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::{Message, CommandCode, FieldData};
+    /// use turnkey_core::DeviceId;
+    ///
+    /// // Message with fields
+    /// let device_id = DeviceId::new(15).unwrap();
+    /// let msg = Message::new(
+    ///     device_id,
+    ///     CommandCode::AccessRequest,
+    ///     vec![
+    ///         FieldData::new("12345678".to_string()).unwrap(),
+    ///         FieldData::new("data".to_string()).unwrap(),
+    ///     ],
+    /// ).unwrap();
+    ///
+    /// let capacity = msg.frame_capacity();
+    /// // Capacity: 2 (ID) + 1 (+) + 4 (REON) + 1 (+) + 5 (cmd) + 3 (delims) + 12 (fields) = 28
+    /// assert_eq!(capacity, 28);
+    ///
+    /// // Message without fields
+    /// let msg = Message::new(
+    ///     DeviceId::new(1).unwrap(),
+    ///     CommandCode::QueryStatus,
+    ///     vec![],
+    /// ).unwrap();
+    ///
+    /// let capacity = msg.frame_capacity();
+    /// // Capacity: 2 (ID) + 1 (+) + 4 (REON) + 1 (+) + 2 (RQ) + 0 (no delims) = 10
+    /// assert_eq!(capacity, 10);
+    /// ```
+    #[inline]
+    pub fn frame_capacity(&self) -> usize {
+        use turnkey_core::constants::{BASE_DELIMITER_COUNT, DEVICE_ID_LENGTH, PROTOCOL_ID_LENGTH};
+
+        let cmd_size = self.command.len();
+        let fields_size = self.fields_len();
+        let field_delimiters = if self.fields.is_empty() {
+            0
+        } else {
+            self.fields.len() + 1 // ']' before each field + trailing ']'
+        };
+
+        DEVICE_ID_LENGTH
+            + BASE_DELIMITER_COUNT
+            + PROTOCOL_ID_LENGTH
+            + cmd_size
+            + field_delimiters
+            + fields_size
+    }
+
     /// Check if message has a checksum
     pub fn has_checksum(&self) -> bool {
         self.checksum.is_some()
@@ -429,5 +527,199 @@ mod tests {
         assert!(result.is_ok());
         let msg = result.unwrap();
         assert_eq!(msg.field_count(), 2);
+    }
+
+    #[test]
+    fn test_fields_len_with_multiple_fields() {
+        // Test total fields length calculation
+        let device_id = DeviceId::new(15).unwrap();
+        let msg = Message::new(
+            device_id,
+            CommandCode::AccessRequest,
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(), // 8 bytes
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(), // 19 bytes
+                FieldData::new("1".to_string()).unwrap(),        // 1 byte
+                FieldData::new("0".to_string()).unwrap(),        // 1 byte
+            ],
+        )
+        .unwrap();
+
+        // Total: 8 + 19 + 1 + 1 = 29 bytes
+        assert_eq!(msg.fields_len(), 29);
+    }
+
+    #[test]
+    fn test_fields_len_with_no_fields() {
+        // Test with empty fields vector
+        let device_id = DeviceId::new(1).unwrap();
+        let msg = Message::new(device_id, CommandCode::QueryStatus, vec![]).unwrap();
+
+        assert_eq!(msg.fields_len(), 0);
+        assert_eq!(msg.field_count(), 0);
+    }
+
+    #[test]
+    fn test_fields_len_with_empty_fields() {
+        // Test with fields that have empty content
+        let device_id = DeviceId::new(15).unwrap();
+        let msg = Message::new(
+            device_id,
+            CommandCode::WaitingRotation,
+            vec![
+                FieldData::new("".to_string()).unwrap(), // 0 bytes
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(), // 19 bytes
+            ],
+        )
+        .unwrap();
+
+        // Total: 0 + 19 = 19 bytes
+        assert_eq!(msg.fields_len(), 19);
+    }
+
+    #[test]
+    fn test_fields_len_consistency() {
+        // Verify that fields_len() matches manual calculation
+        let device_id = DeviceId::new(15).unwrap();
+        let fields = vec![
+            FieldData::new("field1".to_string()).unwrap(),
+            FieldData::new("field2".to_string()).unwrap(),
+            FieldData::new("field3".to_string()).unwrap(),
+        ];
+
+        let manual_sum: usize = fields.iter().map(|f| f.len()).sum();
+
+        let msg = Message::new(device_id, CommandCode::SendCards, fields).unwrap();
+
+        assert_eq!(msg.fields_len(), manual_sum);
+    }
+
+    #[test]
+    fn test_frame_capacity_with_fields() {
+        // Test capacity calculation with multiple fields
+        let device_id = DeviceId::new(15).unwrap();
+        let msg = Message::new(
+            device_id,
+            CommandCode::AccessRequest,
+            vec![
+                FieldData::new("12345678".to_string()).unwrap(), // 8 bytes
+                FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(), // 19 bytes
+                FieldData::new("1".to_string()).unwrap(),        // 1 byte
+                FieldData::new("0".to_string()).unwrap(),        // 1 byte
+            ],
+        )
+        .unwrap();
+
+        // Expected: 2 (ID) + 1 (+) + 4 (REON) + 1 (+) + 5 (000+0) + 5 (delims) + 29 (fields) = 47
+        assert_eq!(msg.frame_capacity(), 47);
+
+        // Verify it matches actual frame size
+        let frame = crate::Frame::from(msg);
+        let frame_str = frame.to_string().unwrap();
+        assert_eq!(frame_str.len(), 47);
+    }
+
+    #[test]
+    fn test_frame_capacity_without_fields() {
+        // Test capacity calculation with no fields
+        let device_id = DeviceId::new(1).unwrap();
+        let msg = Message::new(device_id, CommandCode::QueryStatus, vec![]).unwrap();
+
+        // Expected: 2 (01) + 1 (+) + 4 (REON) + 1 (+) + 2 (RQ) + 0 (no delims) = 10
+        assert_eq!(msg.frame_capacity(), 10);
+
+        // Verify it matches actual frame size
+        let frame = crate::Frame::from(msg);
+        let frame_str = frame.to_string().unwrap();
+        assert_eq!(frame_str.len(), 10);
+    }
+
+    #[test]
+    fn test_frame_capacity_with_long_command() {
+        // Test capacity with longer command code
+        let device_id = DeviceId::new(15).unwrap();
+        let msg = Message::new(
+            device_id,
+            CommandCode::GrantExit,
+            vec![
+                FieldData::new("5".to_string()).unwrap(),
+                FieldData::new("Acesso liberado".to_string()).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        // Expected: 2 (15) + 1 (+) + 4 (REON) + 1 (+) + 4 (00+6) + 3 (delims) + 16 (fields) = 31
+        assert_eq!(msg.frame_capacity(), 31);
+
+        // Verify it matches actual frame size
+        let frame = crate::Frame::from(msg);
+        let frame_str = frame.to_string().unwrap();
+        assert_eq!(frame_str.len(), 31);
+    }
+
+    #[test]
+    fn test_frame_capacity_matches_actual_frame() {
+        // Comprehensive test ensuring capacity always matches actual frame length
+        let test_cases = vec![
+            (DeviceId::new(1).unwrap(), CommandCode::QueryStatus, vec![]),
+            (
+                DeviceId::new(15).unwrap(),
+                CommandCode::AccessRequest,
+                vec![FieldData::new("12345678".to_string()).unwrap()],
+            ),
+            (
+                DeviceId::new(99).unwrap(),
+                CommandCode::WaitingRotation,
+                vec![
+                    FieldData::new("".to_string()).unwrap(),
+                    FieldData::new("10/05/2025 12:46:06".to_string()).unwrap(),
+                ],
+            ),
+            (
+                DeviceId::new(50).unwrap(),
+                CommandCode::SendCards,
+                vec![
+                    FieldData::new("field1".to_string()).unwrap(),
+                    FieldData::new("field2".to_string()).unwrap(),
+                    FieldData::new("field3".to_string()).unwrap(),
+                ],
+            ),
+        ];
+
+        for (device_id, command, fields) in test_cases {
+            let msg = Message::new(device_id, command, fields).unwrap();
+            let capacity = msg.frame_capacity();
+            let frame = crate::Frame::from(msg);
+            let frame_str = frame.to_string().unwrap();
+
+            assert_eq!(
+                capacity,
+                frame_str.len(),
+                "Capacity mismatch for command {:?}",
+                command
+            );
+        }
+    }
+
+    #[test]
+    fn test_capacity_constants_are_correct() {
+        use turnkey_core::constants::{
+            BASE_DELIMITER_COUNT, DEVICE_ID_LENGTH, PROTOCOL_ID, PROTOCOL_ID_LENGTH,
+        };
+
+        // Verify constants match actual values
+        assert_eq!(
+            DEVICE_ID_LENGTH, 2,
+            "Device IDs are zero-padded to 2 digits (01-99)"
+        );
+        assert_eq!(
+            PROTOCOL_ID_LENGTH,
+            PROTOCOL_ID.len(),
+            "PROTOCOL_ID_LENGTH must match PROTOCOL_ID string length"
+        );
+        assert_eq!(
+            BASE_DELIMITER_COUNT, 2,
+            "Two '+' delimiters separate ID, REON, and command"
+        );
     }
 }
