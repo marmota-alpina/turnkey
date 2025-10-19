@@ -53,9 +53,10 @@ impl Message {
     pub fn message_type(&self) -> MessageType {
         match self.command {
             CommandCode::AccessRequest => MessageType::AccessRequest,
-            CommandCode::GrantEntry | CommandCode::GrantExit | CommandCode::GrantBoth | CommandCode::DenyAccess => {
-                MessageType::AccessResponse
-            }
+            CommandCode::GrantEntry
+            | CommandCode::GrantExit
+            | CommandCode::GrantBoth
+            | CommandCode::DenyAccess => MessageType::AccessResponse,
             CommandCode::WaitingRotation => MessageType::WaitingForRotation,
             CommandCode::RotationCompleted => MessageType::RotationCompleted,
             CommandCode::RotationTimeout => MessageType::RotationTimeout,

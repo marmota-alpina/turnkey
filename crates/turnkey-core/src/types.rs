@@ -1,4 +1,4 @@
-use crate::{constants::*, error::Error, Result};
+use crate::{Result, constants::*, error::Error};
 use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -9,7 +9,7 @@ pub struct DeviceId(u8);
 
 impl DeviceId {
     pub fn new(id: u8) -> Result<Self> {
-        if id < MIN_DEVICE_ID || id > MAX_DEVICE_ID {
+        if !(MIN_DEVICE_ID..=MAX_DEVICE_ID).contains(&id) {
             return Err(Error::InvalidMessageFormat(format!(
                 "Device ID must be {}-{}, got {}",
                 MIN_DEVICE_ID, MAX_DEVICE_ID, id
@@ -54,7 +54,7 @@ impl CardNumber {
         let number = number.trim().to_uppercase();
 
         let len = number.len();
-        if len < MIN_CARD_LENGTH || len > MAX_CARD_LENGTH {
+        if !(MIN_CARD_LENGTH..=MAX_CARD_LENGTH).contains(&len) {
             return Err(Error::InvalidCardFormat(format!(
                 "Card number must be {}-{} chars, got {}",
                 MIN_CARD_LENGTH, MAX_CARD_LENGTH, len
@@ -172,8 +172,9 @@ impl HenryTimestamp {
 
     /// Parse from Henry format: "10/05/2025 12:46:06"
     pub fn parse(s: &str) -> Result<Self> {
-        let dt = chrono::NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S")
-            .map_err(|e| Error::InvalidMessageFormat(format!("Invalid timestamp '{}': {}", s, e)))?;
+        let dt = chrono::NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S").map_err(|e| {
+            Error::InvalidMessageFormat(format!("Invalid timestamp '{}': {}", s, e))
+        })?;
 
         Ok(HenryTimestamp(Local.from_local_datetime(&dt).unwrap()))
     }
@@ -277,7 +278,10 @@ mod tests {
 
     #[test]
     fn test_access_direction() {
-        assert_eq!(AccessDirection::from_u8(0).unwrap(), AccessDirection::Undefined);
+        assert_eq!(
+            AccessDirection::from_u8(0).unwrap(),
+            AccessDirection::Undefined
+        );
         assert_eq!(AccessDirection::from_u8(1).unwrap(), AccessDirection::Entry);
         assert_eq!(AccessDirection::from_u8(2).unwrap(), AccessDirection::Exit);
         assert!(AccessDirection::from_u8(3).is_err());
@@ -294,10 +298,22 @@ mod tests {
 
     #[test]
     fn test_validation_mode() {
-        assert_eq!(ValidationMode::from_char('F').unwrap(), ValidationMode::Offline);
-        assert_eq!(ValidationMode::from_char('O').unwrap(), ValidationMode::Online);
-        assert_eq!(ValidationMode::from_char('A').unwrap(), ValidationMode::Automatic);
-        assert_eq!(ValidationMode::from_char('S').unwrap(), ValidationMode::SemiAutomatic);
+        assert_eq!(
+            ValidationMode::from_char('F').unwrap(),
+            ValidationMode::Offline
+        );
+        assert_eq!(
+            ValidationMode::from_char('O').unwrap(),
+            ValidationMode::Online
+        );
+        assert_eq!(
+            ValidationMode::from_char('A').unwrap(),
+            ValidationMode::Automatic
+        );
+        assert_eq!(
+            ValidationMode::from_char('S').unwrap(),
+            ValidationMode::SemiAutomatic
+        );
         assert!(ValidationMode::from_char('X').is_err());
 
         assert_eq!(ValidationMode::Online.to_char(), 'O');

@@ -3,7 +3,7 @@ pub mod commands;
 pub mod message;
 pub mod parser;
 
-pub use builder::{format_message, MessageBuilder};
+pub use builder::{MessageBuilder, format_message};
 pub use commands::CommandCode;
 pub use message::{Message, MessageType};
 pub use parser::MessageParser;

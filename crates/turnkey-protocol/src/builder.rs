@@ -1,5 +1,5 @@
 use crate::{commands::CommandCode, message::Message};
-use turnkey_core::{constants::*, DeviceId};
+use turnkey_core::{DeviceId, constants::*};
 
 pub struct MessageBuilder {
     device_id: DeviceId,
@@ -88,7 +88,8 @@ mod tests {
 
     #[test]
     fn test_build_no_fields() {
-        let msg = MessageBuilder::new(DeviceId::new(1).unwrap(), CommandCode::QueryStatus).build_string();
+        let msg =
+            MessageBuilder::new(DeviceId::new(1).unwrap(), CommandCode::QueryStatus).build_string();
 
         assert_eq!(msg, "01+REON+RQ");
     }

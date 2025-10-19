@@ -4,27 +4,27 @@ use turnkey_core::{Error, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommandCode {
     // Access control
-    AccessRequest,    // 000+0
-    GrantBoth,        // 00+1
-    GrantManual,      // 00+4
-    GrantEntry,       // 00+5
-    GrantExit,        // 00+6
-    DenyAccess,       // 00+30
+    AccessRequest, // 000+0
+    GrantBoth,     // 00+1
+    GrantManual,   // 00+4
+    GrantEntry,    // 00+5
+    GrantExit,     // 00+6
+    DenyAccess,    // 00+30
 
     // Turnstile status
-    WaitingRotation,  // 000+80
+    WaitingRotation,   // 000+80
     RotationCompleted, // 000+81
-    RotationTimeout,  // 000+82
+    RotationTimeout,   // 000+82
 
     // Management
-    SendConfig,       // EC
-    SendCards,        // ECAR
-    SendUsers,        // EU
-    SendBiometrics,   // ED
-    SendDateTime,     // EH
-    ReceiveLogs,      // ER
-    QueryStatus,      // RQ
-    ReceiveConfig,    // RC
+    SendConfig,     // EC
+    SendCards,      // ECAR
+    SendUsers,      // EU
+    SendBiometrics, // ED
+    SendDateTime,   // EH
+    ReceiveLogs,    // ER
+    QueryStatus,    // RQ
+    ReceiveConfig,  // RC
 }
 
 impl CommandCode {
@@ -80,9 +80,15 @@ mod tests {
 
     #[test]
     fn test_command_code_parse() {
-        assert_eq!(CommandCode::parse("000+0").unwrap(), CommandCode::AccessRequest);
+        assert_eq!(
+            CommandCode::parse("000+0").unwrap(),
+            CommandCode::AccessRequest
+        );
         assert_eq!(CommandCode::parse("00+6").unwrap(), CommandCode::GrantExit);
-        assert_eq!(CommandCode::parse("000+81").unwrap(), CommandCode::RotationCompleted);
+        assert_eq!(
+            CommandCode::parse("000+81").unwrap(),
+            CommandCode::RotationCompleted
+        );
         assert_eq!(CommandCode::parse("ECAR").unwrap(), CommandCode::SendCards);
     }
 

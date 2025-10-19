@@ -1,5 +1,5 @@
 use crate::{commands::CommandCode, message::Message};
-use turnkey_core::{constants::*, DeviceId, Error, Result};
+use turnkey_core::{DeviceId, Error, Result, constants::*};
 
 pub struct MessageParser;
 
