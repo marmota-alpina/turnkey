@@ -1,5 +1,6 @@
 use crate::validation::validate_field;
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
 use turnkey_core::{Error, Result};
@@ -130,6 +131,39 @@ impl FromStr for FieldData {
     /// assert!(invalid.is_err());
     /// ```
     fn from_str(s: &str) -> Result<Self> {
+        Self::new(s.to_string())
+    }
+}
+
+impl TryFrom<&str> for FieldData {
+    type Error = Error;
+
+    /// Try to create FieldData from a string slice with validation
+    ///
+    /// This provides a more ergonomic API for creating FieldData from string literals
+    /// and borrowed strings, following Rust standard library patterns.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidFieldFormat` if field contains reserved delimiters
+    ///
+    /// # Example
+    /// ```
+    /// use turnkey_protocol::FieldData;
+    /// use std::convert::TryFrom;
+    ///
+    /// // Using try_from
+    /// let field = FieldData::try_from("12345678").unwrap();
+    /// assert_eq!(field.as_str(), "12345678");
+    ///
+    /// // Using try_into with type annotation
+    /// let field: FieldData = "test_value".try_into().unwrap();
+    /// assert_eq!(field.as_str(), "test_value");
+    ///
+    /// // Invalid field is rejected
+    /// let invalid = FieldData::try_from("bad]field");
+    /// assert!(invalid.is_err());
+    /// ```
+    fn try_from(s: &str) -> Result<Self> {
         Self::new(s.to_string())
     }
 }
@@ -304,5 +338,50 @@ mod tests {
 
         // Note: This field would cause protocol errors if used in actual messages.
         // Only use new_unchecked with values you know are valid.
+    }
+
+    #[test]
+    fn test_try_from_valid() {
+        use std::convert::TryFrom;
+
+        let field = FieldData::try_from("test_value").unwrap();
+        assert_eq!(field.as_str(), "test_value");
+
+        let field = FieldData::try_from("12345678").unwrap();
+        assert_eq!(field.as_str(), "12345678");
+    }
+
+    #[test]
+    fn test_try_from_invalid() {
+        use std::convert::TryFrom;
+
+        let result = FieldData::try_from("invalid]field");
+        assert!(result.is_err());
+
+        let result = FieldData::try_from("invalid+field");
+        assert!(result.is_err());
+
+        let result = FieldData::try_from("invalid[field");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_into_with_type_annotation() {
+        use std::convert::TryInto;
+
+        let field: Result<FieldData> = "valid_field".try_into();
+        assert!(field.is_ok());
+        assert_eq!(field.unwrap().as_str(), "valid_field");
+
+        let field: Result<FieldData> = "invalid]field".try_into();
+        assert!(field.is_err());
+    }
+
+    #[test]
+    fn test_try_from_empty_string() {
+        use std::convert::TryFrom;
+
+        let field = FieldData::try_from("").unwrap();
+        assert_eq!(field.as_str(), "");
     }
 }
