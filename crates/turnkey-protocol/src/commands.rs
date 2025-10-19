@@ -118,6 +118,7 @@
 //! models and may not be supported by all devices.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use turnkey_core::{Error, Result};
 
 /// Command codes for Henry protocol messages.
@@ -217,6 +218,12 @@ impl CommandCode {
     }
 }
 
+impl fmt::Display for CommandCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +261,71 @@ mod tests {
             let parsed = CommandCode::parse(str_repr).unwrap();
             assert_eq!(parsed, cmd);
         }
+    }
+
+    #[test]
+    fn test_command_code_display() {
+        // Access control commands
+        assert_eq!(format!("{}", CommandCode::AccessRequest), "000+0");
+        assert_eq!(format!("{}", CommandCode::GrantBoth), "00+1");
+        assert_eq!(format!("{}", CommandCode::GrantManual), "00+4");
+        assert_eq!(format!("{}", CommandCode::GrantEntry), "00+5");
+        assert_eq!(format!("{}", CommandCode::GrantExit), "00+6");
+        assert_eq!(format!("{}", CommandCode::DenyAccess), "00+30");
+
+        // Turnstile status commands
+        assert_eq!(format!("{}", CommandCode::WaitingRotation), "000+80");
+        assert_eq!(format!("{}", CommandCode::RotationCompleted), "000+81");
+        assert_eq!(format!("{}", CommandCode::RotationTimeout), "000+82");
+
+        // Management commands
+        assert_eq!(format!("{}", CommandCode::SendConfig), "EC");
+        assert_eq!(format!("{}", CommandCode::SendCards), "ECAR");
+        assert_eq!(format!("{}", CommandCode::SendUsers), "EU");
+        assert_eq!(format!("{}", CommandCode::SendBiometrics), "ED");
+        assert_eq!(format!("{}", CommandCode::SendDateTime), "EH");
+        assert_eq!(format!("{}", CommandCode::ReceiveLogs), "ER");
+        assert_eq!(format!("{}", CommandCode::QueryStatus), "RQ");
+        assert_eq!(format!("{}", CommandCode::ReceiveConfig), "RC");
+    }
+
+    #[test]
+    fn test_command_code_display_consistency() {
+        // Verify that Display trait produces same output as as_str()
+        let all_commands = vec![
+            CommandCode::AccessRequest,
+            CommandCode::GrantBoth,
+            CommandCode::GrantManual,
+            CommandCode::GrantEntry,
+            CommandCode::GrantExit,
+            CommandCode::DenyAccess,
+            CommandCode::WaitingRotation,
+            CommandCode::RotationCompleted,
+            CommandCode::RotationTimeout,
+            CommandCode::SendConfig,
+            CommandCode::SendCards,
+            CommandCode::SendUsers,
+            CommandCode::SendBiometrics,
+            CommandCode::SendDateTime,
+            CommandCode::ReceiveLogs,
+            CommandCode::QueryStatus,
+            CommandCode::ReceiveConfig,
+        ];
+
+        for cmd in all_commands {
+            assert_eq!(format!("{}", cmd), cmd.as_str());
+        }
+    }
+
+    #[test]
+    fn test_command_code_display_in_strings() {
+        // Test that Display can be used in string formatting
+        let cmd = CommandCode::AccessRequest;
+        let message = format!("Processing command: {}", cmd);
+        assert_eq!(message, "Processing command: 000+0");
+
+        let cmd = CommandCode::QueryStatus;
+        let log_entry = format!("[{}] Device query initiated", cmd);
+        assert_eq!(log_entry, "[RQ] Device query initiated");
     }
 }
