@@ -1,6 +1,147 @@
+//! Command code definitions for the Henry protocol.
+//!
+//! This module defines all command codes used in the Henry protocol for
+//! access control communication between turnstiles and servers. Each command
+//! code represents a specific action or message type in the protocol flow.
+//!
+//! # Protocol Format
+//!
+//! Command codes appear in the protocol format after the device ID and
+//! protocol identifier:
+//!
+//! ```text
+//! <ID>+REON+<COMMAND>+<DATA_FIELDS>
+//!            ^^^^^^^^
+//!            Command code position
+//! ```
+//!
+//! # Command Categories
+//!
+//! Commands are organized into three main categories:
+//!
+//! ## Access Control
+//!
+//! Commands for managing access requests and responses:
+//! - `AccessRequest` (000+0): Turnstile requests access validation
+//! - `GrantBoth` (00+1): Server grants access in both directions
+//! - `GrantManual` (00+4): Server grants manual access (requires operator intervention)
+//! - `GrantEntry` (00+5): Server grants entry access only
+//! - `GrantExit` (00+6): Server grants exit access only
+//! - `DenyAccess` (00+30): Server denies access
+//!
+//! ## Turnstile Status
+//!
+//! Commands for tracking turnstile state machine:
+//! - `WaitingRotation` (000+80): Turnstile waiting for user to pass
+//! - `RotationCompleted` (000+81): User successfully passed through
+//! - `RotationTimeout` (000+82): User did not pass within timeout period
+//!
+//! ## Device Management
+//!
+//! Commands for configuration and data synchronization:
+//! - `SendConfig` (EC): Send device configuration parameters
+//! - `SendCards` (ECAR): Send/update card database
+//! - `SendUsers` (EU): Send/update user database (Primme Acesso only)
+//! - `SendBiometrics` (ED): Send/update biometric templates
+//! - `SendDateTime` (EH): Synchronize device date/time
+//! - `ReceiveLogs` (ER): Retrieve access logs from device
+//! - `QueryStatus` (RQ): Query device status and counters
+//! - `ReceiveConfig` (RC): Request current device configuration
+//!
+//! # Wire Format Examples
+//!
+//! ## Access Request
+//! ```text
+//! 15+REON+000+0]12345678]10/05/2025 12:46:06]1]0]
+//!         ^^^^^ Command: AccessRequest
+//! ```
+//!
+//! ## Grant Access
+//! ```text
+//! 15+REON+00+6]5]Acesso liberado]
+//!         ^^^^ Command: GrantExit
+//! ```
+//!
+//! ## Rotation Status
+//! ```text
+//! 15+REON+000+81]]10/05/2025 12:46:08]1]0]
+//!         ^^^^^^ Command: RotationCompleted
+//! ```
+//!
+//! # Usage Examples
+//!
+//! ## Parsing Command Codes
+//!
+//! ```
+//! use turnkey_protocol::CommandCode;
+//!
+//! // Parse from protocol string
+//! let cmd = CommandCode::parse("000+0").unwrap();
+//! assert_eq!(cmd, CommandCode::AccessRequest);
+//!
+//! // Convert back to string
+//! assert_eq!(cmd.as_str(), "000+0");
+//! ```
+//!
+//! ## Round-trip Conversion
+//!
+//! ```
+//! use turnkey_protocol::CommandCode;
+//!
+//! let original = CommandCode::GrantExit;
+//! let wire_format = original.as_str();
+//! let parsed = CommandCode::parse(wire_format).unwrap();
+//!
+//! assert_eq!(parsed, original);
+//! assert_eq!(wire_format, "00+6");
+//! ```
+//!
+//! ## Error Handling
+//!
+//! ```
+//! use turnkey_protocol::CommandCode;
+//!
+//! // Invalid command codes return errors
+//! let result = CommandCode::parse("INVALID");
+//! assert!(result.is_err());
+//! ```
+//!
+//! # Protocol Compliance
+//!
+//! All command codes are defined according to the Henry protocol specification
+//! and are compatible with:
+//! - Primme Acesso (all commands)
+//! - Argos (access control and status commands)
+//! - Primme SF (access control and basic management)
+//!
+//! Note: Some commands like `SendUsers` (EU) are specific to certain equipment
+//! models and may not be supported by all devices.
+
 use serde::{Deserialize, Serialize};
 use turnkey_core::{Error, Result};
 
+/// Command codes for Henry protocol messages.
+///
+/// Represents all supported command types in the Henry access control protocol.
+/// Each variant corresponds to a specific wire format code used in protocol messages.
+///
+/// # Wire Format
+///
+/// Command codes use a compact string representation:
+/// - Access control: Numeric codes (e.g., "000+0", "00+6")
+/// - Management: Letter codes (e.g., "EC", "ECAR", "RQ")
+///
+/// # Examples
+///
+/// ```
+/// use turnkey_protocol::CommandCode;
+///
+/// let cmd = CommandCode::AccessRequest;
+/// assert_eq!(cmd.as_str(), "000+0");
+///
+/// let parsed = CommandCode::parse("00+6").unwrap();
+/// assert_eq!(parsed, CommandCode::GrantExit);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommandCode {
     // Access control
@@ -47,7 +188,9 @@ impl CommandCode {
             "ER" => Ok(CommandCode::ReceiveLogs),
             "RQ" => Ok(CommandCode::QueryStatus),
             "RC" => Ok(CommandCode::ReceiveConfig),
-            _ => Err(Error::InvalidCommandCode(s.to_string())),
+            _ => Err(Error::InvalidCommandCode {
+                code: s.to_string(),
+            }),
         }
     }
 

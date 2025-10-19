@@ -12,6 +12,9 @@ pub const PROTOCOL_ID: &str = "REON";
 pub const START_BYTE: u8 = 0x02; // STX
 pub const END_BYTE: u8 = 0x03; // ETX
 
+/// Frame overhead (STX + ETX = 2 bytes)
+pub const FRAME_OVERHEAD: usize = 2;
+
 /// Timeouts (milliseconds)
 pub const DEFAULT_ONLINE_TIMEOUT: u64 = 3000;
 pub const MIN_ONLINE_TIMEOUT: u64 = 500;
