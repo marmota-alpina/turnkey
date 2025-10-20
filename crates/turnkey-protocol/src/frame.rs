@@ -244,9 +244,21 @@ impl Frame {
                 if stored == &calculated {
                     Ok(true)
                 } else {
+                    // Include frame content for debugging
+                    let content = self.to_string().unwrap_or_else(|_| {
+                        let bytes = self.content_bytes();
+                        let hex: String = bytes
+                            .iter()
+                            .map(|b| format!("{b:02X}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        format!("<non-UTF8: {hex}>")
+                    });
+
                     Err(Error::ChecksumMismatch {
-                        expected: calculated, // Fix: calculated is expected
+                        expected: calculated,
                         actual: stored.clone(),
+                        context: format!("Frame content: '{content}'"),
                     })
                 }
             }
@@ -311,7 +323,56 @@ fn validate_protocol_id(part: &str) -> Result<()> {
     Ok(())
 }
 
-/// Parse command and fields from the remaining protocol parts
+/// Parse command code from field parts.
+///
+/// Extracts and validates the command code from the first field part.
+fn parse_command_code(field_parts: &[&str]) -> Result<CommandCode> {
+    if field_parts.is_empty() {
+        return Err(Error::InvalidMessageFormat {
+            message: "Missing command part".to_string(),
+        });
+    }
+    CommandCode::parse(field_parts[0])
+}
+
+/// Parse data fields from field parts.
+///
+/// Extracts and validates all data fields, filtering out empty strings.
+fn parse_data_fields(field_parts: &[&str]) -> Result<Vec<FieldData>> {
+    field_parts[1..]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| FieldData::new(s.to_string()))
+        .collect()
+}
+
+/// Parse command and fields from the remaining protocol parts.
+///
+/// This function orchestrates the parsing by:
+/// 1. Joining parts with device delimiter
+/// 2. Splitting by field delimiter
+/// 3. Parsing command code
+/// 4. Parsing data fields
+///
+/// # Why Join-Then-Split?
+///
+/// The Henry protocol allows commands to contain the device delimiter '+',
+/// such as "000+0" (access request) or "00+6" (grant exit). A naive split
+/// by '+' would incorrectly parse "000+0" as two separate parts.
+///
+/// By joining remaining parts with '+' first, then splitting by the field
+/// delimiter ']', we correctly extract the full command code as everything
+/// before the first ']', regardless of how many '+' characters it contains.
+///
+/// # Example
+///
+/// ```text
+/// Input parts: ["000+0", "12345678", "timestamp"]
+/// After join:  "000+0+12345678+timestamp"
+/// After split: ["000+0", "12345678", "timestamp"] (by ']')
+/// Command:     "000+0"
+/// Fields:      ["12345678", "timestamp"]
+/// ```
 fn parse_command_and_fields(parts: &[&str]) -> Result<(CommandCode, Vec<FieldData>)> {
     if parts.is_empty() {
         return Err(Error::InvalidMessageFormat {
@@ -319,21 +380,17 @@ fn parse_command_and_fields(parts: &[&str]) -> Result<(CommandCode, Vec<FieldDat
         });
     }
 
-    // Join remaining parts and split by field delimiter
+    // Join remaining parts with device delimiter, then split by field delimiter.
+    // This handles commands that themselves contain '+' (e.g., "000+0", "00+6")
+    // by treating everything before the first ']' as the command code.
     let command_and_fields = parts.join(DELIMITER_DEVICE);
     let field_parts: Vec<&str> = command_and_fields.split(DELIMITER_FIELD).collect();
 
-    // First part is the command
-    let command = CommandCode::parse(field_parts[0])?;
+    // Parse each component using dedicated functions for single responsibility
+    let command = parse_command_code(&field_parts)?;
+    let fields = parse_data_fields(&field_parts)?;
 
-    // Remaining parts are data fields (filter out empty strings)
-    let fields: Result<Vec<FieldData>> = field_parts[1..]
-        .iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| FieldData::new(s.to_string()))
-        .collect();
-
-    Ok((command, fields?))
+    Ok((command, fields))
 }
 
 /// Convert Frame to Message with validation
@@ -376,7 +433,7 @@ impl TryFrom<Frame> for Message {
 }
 
 impl fmt::Display for Frame {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let content = match self.to_string() {
             Ok(s) => s,
             Err(_) => {

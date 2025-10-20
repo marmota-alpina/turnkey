@@ -9,8 +9,12 @@ pub enum Error {
     #[error("Invalid command code: {code}")]
     InvalidCommandCode { code: String },
 
-    #[error("Checksum mismatch: expected {expected}, got {actual}")]
-    ChecksumMismatch { expected: String, actual: String },
+    #[error("Checksum mismatch: expected {expected}, got {actual}. {context}")]
+    ChecksumMismatch {
+        expected: String,
+        actual: String,
+        context: String,
+    },
 
     #[error("Missing required field: {0}")]
     MissingField(String),
