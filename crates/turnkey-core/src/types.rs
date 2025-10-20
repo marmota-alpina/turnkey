@@ -1,4 +1,8 @@
-use crate::{Result, constants::*, error::Error};
+use crate::{
+    Result,
+    constants::{MAX_CARD_LENGTH, MAX_DEVICE_ID, MIN_CARD_LENGTH, MIN_DEVICE_ID},
+    error::Error,
+};
 use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -9,22 +13,27 @@ use subtle::ConstantTimeEq;
 pub struct DeviceId(u8);
 
 impl DeviceId {
+    /// Create a new device ID with validation.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidMessageFormat` if the ID is outside the valid range (1-99).
     pub fn new(id: u8) -> Result<Self> {
         if !(MIN_DEVICE_ID..=MAX_DEVICE_ID).contains(&id) {
             return Err(Error::InvalidMessageFormat {
-                message: format!(
-                    "Device ID must be {}-{}, got {}",
-                    MIN_DEVICE_ID, MAX_DEVICE_ID, id
-                ),
+                message: format!("Device ID must be {MIN_DEVICE_ID}-{MAX_DEVICE_ID}, got {id}"),
             });
         }
         Ok(DeviceId(id))
     }
 
+    /// Get the raw device ID as u8.
+    #[must_use]
     pub fn as_u8(&self) -> u8 {
         self.0
     }
 
+    /// Format the device ID as a zero-padded 2-digit string.
+    #[must_use]
     pub fn to_string_padded(&self) -> String {
         format!("{:02}", self.0)
     }
@@ -41,7 +50,7 @@ impl std::str::FromStr for DeviceId {
 
     fn from_str(s: &str) -> Result<Self> {
         let id: u8 = s.parse().map_err(|_| Error::InvalidMessageFormat {
-            message: format!("Invalid device ID: {}", s),
+            message: format!("Invalid device ID: {s}"),
         })?;
         DeviceId::new(id)
     }
@@ -56,15 +65,22 @@ impl std::str::FromStr for DeviceId {
 pub struct CardNumber(String);
 
 impl CardNumber {
-    pub fn new(number: String) -> Result<Self> {
+    /// Create a new card number with validation.
+    ///
+    /// The card number is normalized (trimmed and converted to uppercase) before validation.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidCardFormat` if:
+    /// - The card number length is not between 3-20 characters
+    /// - The card number contains non-ASCII characters
+    pub fn new(number: &str) -> Result<Self> {
         // Normalize: trim and uppercase
         let number = number.trim().to_uppercase();
 
         let len = number.len();
         if !(MIN_CARD_LENGTH..=MAX_CARD_LENGTH).contains(&len) {
             return Err(Error::InvalidCardFormat(format!(
-                "Card number must be {}-{} chars, got {}",
-                MIN_CARD_LENGTH, MAX_CARD_LENGTH, len
+                "Card number must be {MIN_CARD_LENGTH}-{MAX_CARD_LENGTH} chars, got {len}"
             )));
         }
 
@@ -78,11 +94,14 @@ impl CardNumber {
         Ok(CardNumber(number))
     }
 
+    /// Get the card number as a string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Left-pad with zeros to 20 characters (protocol standard)
+    /// Left-pad with zeros to 20 characters (protocol standard).
+    #[must_use]
     pub fn padded(&self) -> String {
         format!("{:0>20}", self.0)
     }
@@ -98,7 +117,7 @@ impl std::str::FromStr for CardNumber {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        CardNumber::new(s.to_string())
+        CardNumber::new(s)
     }
 }
 
@@ -131,17 +150,23 @@ pub enum AccessDirection {
 }
 
 impl AccessDirection {
+    /// Create an access direction from a u8 value.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidMessageFormat` if the value is not 0, 1, or 2.
     pub fn from_u8(value: u8) -> Result<Self> {
         match value {
             0 => Ok(AccessDirection::Undefined),
             1 => Ok(AccessDirection::Entry),
             2 => Ok(AccessDirection::Exit),
             _ => Err(Error::InvalidMessageFormat {
-                message: format!("Invalid direction: {}", value),
+                message: format!("Invalid direction: {value}"),
             }),
         }
     }
 
+    /// Convert the access direction to a u8 value.
+    #[must_use]
     pub fn to_u8(self) -> u8 {
         self as u8
     }
@@ -166,16 +191,22 @@ pub enum ReaderType {
 }
 
 impl ReaderType {
+    /// Create a reader type from a u8 value.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidMessageFormat` if the value is not 1 (RFID) or 5 (Biometric).
     pub fn from_u8(value: u8) -> Result<Self> {
         match value {
             1 => Ok(ReaderType::Rfid),
             5 => Ok(ReaderType::Biometric),
             _ => Err(Error::InvalidMessageFormat {
-                message: format!("Invalid reader type: {}", value),
+                message: format!("Invalid reader type: {value}"),
             }),
         }
     }
 
+    /// Convert the reader type to a u8 value.
+    #[must_use]
     pub fn to_u8(self) -> u8 {
         self as u8
     }
@@ -186,30 +217,41 @@ impl ReaderType {
 pub struct HenryTimestamp(DateTime<Local>);
 
 impl HenryTimestamp {
+    /// Create a timestamp from the current local time.
+    #[must_use]
     pub fn now() -> Self {
         HenryTimestamp(Local::now())
     }
 
+    /// Create a timestamp from a DateTime instance.
+    #[must_use]
     pub fn from_datetime(dt: DateTime<Local>) -> Self {
         HenryTimestamp(dt)
     }
 
-    /// Parse from Henry format: "10/05/2025 12:46:06"
+    /// Parse from Henry format: "10/05/2025 12:46:06".
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidMessageFormat` if the timestamp string does not match
+    /// the expected format "dd/mm/yyyy hh:mm:ss".
     pub fn parse(s: &str) -> Result<Self> {
         let dt = chrono::NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S").map_err(|e| {
             Error::InvalidMessageFormat {
-                message: format!("Invalid timestamp '{}': {}", s, e),
+                message: format!("Invalid timestamp '{s}': {e}"),
             }
         })?;
 
         Ok(HenryTimestamp(Local.from_local_datetime(&dt).unwrap()))
     }
 
-    /// Format for Henry protocol
+    /// Format for Henry protocol (dd/mm/yyyy hh:mm:ss).
+    #[must_use]
     pub fn format(&self) -> String {
         self.0.format("%d/%m/%Y %H:%M:%S").to_string()
     }
 
+    /// Get the inner DateTime reference.
+    #[must_use]
     pub fn inner(&self) -> &DateTime<Local> {
         &self.0
     }
@@ -235,16 +277,24 @@ pub enum ValidationMode {
 }
 
 impl ValidationMode {
+    /// Create a validation mode from a character code.
+    ///
+    /// Valid codes: 'F' (Offline), 'O' (Online), 'A' (Automatic), 'S' (Semi-automatic).
+    ///
+    /// # Errors
+    /// Returns `Error::Config` if the character is not a valid validation mode code.
     pub fn from_char(c: char) -> Result<Self> {
         match c {
             'F' => Ok(ValidationMode::Offline),
             'O' => Ok(ValidationMode::Online),
             'A' => Ok(ValidationMode::Automatic),
             'S' => Ok(ValidationMode::SemiAutomatic),
-            _ => Err(Error::Config(format!("Invalid validation mode: {}", c))),
+            _ => Err(Error::Config(format!("Invalid validation mode: {c}"))),
         }
     }
 
+    /// Convert the validation mode to its character code.
+    #[must_use]
     pub fn to_char(self) -> char {
         match self {
             ValidationMode::Offline => 'F',
@@ -284,13 +334,13 @@ mod tests {
     #[case("12345678", "12345678")]
     #[case("12345678901234567890", "12345678901234567890")]
     fn test_card_number_valid(#[case] input: &str, #[case] expected: &str) {
-        let card = CardNumber::new(input.to_string()).unwrap();
+        let card = CardNumber::new(input).unwrap();
         assert_eq!(card.as_str(), expected);
     }
 
     #[test]
     fn test_card_number_padding() {
-        let card = CardNumber::new("12345678".to_string()).unwrap();
+        let card = CardNumber::new("12345678").unwrap();
         assert_eq!(card.padded(), "00000000000012345678");
     }
 
@@ -298,7 +348,7 @@ mod tests {
     #[case("12")] // too short
     #[case("123456789012345678901")] // too long
     fn test_card_number_invalid(#[case] input: &str) {
-        let result = CardNumber::new(input.to_string());
+        let result = CardNumber::new(input);
         assert!(result.is_err());
     }
 
