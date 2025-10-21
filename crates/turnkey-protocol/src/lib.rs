@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod codec;
 pub mod commands;
 pub mod field;
 pub mod frame;
@@ -8,6 +9,7 @@ pub mod stream_parser;
 pub mod validation;
 
 pub use builder::{MessageBuilder, format_message};
+pub use codec::HenryCodec;
 pub use commands::CommandCode;
 pub use field::FieldData;
 pub use frame::Frame;
