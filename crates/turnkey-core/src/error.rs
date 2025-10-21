@@ -61,6 +61,9 @@ pub enum Error {
     #[error("Invalid state transition from {from} to {to}")]
     InvalidStateTransition { from: String, to: String },
 
+    #[error("Frame too large: {size} bytes exceeds maximum {max_size} bytes")]
+    FrameTooLarge { size: usize, max_size: usize },
+
     // IO errors
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
