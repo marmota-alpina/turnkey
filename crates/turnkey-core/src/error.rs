@@ -58,6 +58,15 @@ pub enum Error {
     #[error("Invalid field format: {message}")]
     InvalidFieldFormat { message: String },
 
+    #[error("Invalid direction code: {code}")]
+    InvalidDirection { code: u8 },
+
+    #[error("Invalid reader type code: {code}")]
+    InvalidReaderType { code: u8 },
+
+    #[error("Invalid timestamp format: {value}")]
+    InvalidTimestamp { value: String },
+
     #[error("Invalid state transition from {from} to {to}")]
     InvalidStateTransition { from: String, to: String },
 
