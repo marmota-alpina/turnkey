@@ -153,22 +153,43 @@ impl AccessDirection {
     /// Create an access direction from a u8 value.
     ///
     /// # Errors
-    /// Returns `Error::InvalidMessageFormat` if the value is not 0, 1, or 2.
+    /// Returns `Error::InvalidDirection` if the value is not 0, 1, or 2.
+    #[inline]
     pub fn from_u8(value: u8) -> Result<Self> {
         match value {
             0 => Ok(AccessDirection::Undefined),
             1 => Ok(AccessDirection::Entry),
             2 => Ok(AccessDirection::Exit),
-            _ => Err(Error::InvalidMessageFormat {
-                message: format!("Invalid direction: {value}"),
-            }),
+            _ => Err(Error::InvalidDirection { code: value }),
         }
     }
 
     /// Convert the access direction to a u8 value.
+    #[inline]
     #[must_use]
     pub fn to_u8(self) -> u8 {
         self as u8
+    }
+
+    /// Returns `true` if direction is Entry.
+    #[inline]
+    #[must_use]
+    pub fn is_entry(self) -> bool {
+        matches!(self, AccessDirection::Entry)
+    }
+
+    /// Returns `true` if direction is Exit.
+    #[inline]
+    #[must_use]
+    pub fn is_exit(self) -> bool {
+        matches!(self, AccessDirection::Exit)
+    }
+
+    /// Returns `true` if direction is Undefined.
+    #[inline]
+    #[must_use]
+    pub fn is_undefined(self) -> bool {
+        matches!(self, AccessDirection::Undefined)
     }
 }
 
@@ -193,22 +214,54 @@ pub enum ReaderType {
 impl ReaderType {
     /// Create a reader type from a u8 value.
     ///
+    /// Supports both legacy and modern Henry protocol encoding schemes:
+    /// - Code 0: RFID (legacy devices like ACR122U)
+    /// - Code 1: RFID (modern devices)
+    /// - Code 5: Biometric (modern devices)
+    ///
     /// # Errors
-    /// Returns `Error::InvalidMessageFormat` if the value is not 1 (RFID) or 5 (Biometric).
+    /// Returns `Error::InvalidReaderType` if the value is not a recognized reader type code.
+    ///
+    /// # Protocol Compatibility
+    ///
+    /// Different Henry-compatible devices use different encoding:
+    /// - **Legacy**: 0=RFID, 1=Biometric
+    /// - **Modern**: 1=RFID, 5=Biometric
+    ///
+    /// This implementation accepts code 0 or 1 for RFID to maintain backward
+    /// compatibility with real Henry equipment (e.g., ACR122U RFID readers).
+    #[inline]
     pub fn from_u8(value: u8) -> Result<Self> {
         match value {
-            1 => Ok(ReaderType::Rfid),
+            0 | 1 => Ok(ReaderType::Rfid), // Accept both legacy (0) and modern (1)
             5 => Ok(ReaderType::Biometric),
-            _ => Err(Error::InvalidMessageFormat {
-                message: format!("Invalid reader type: {value}"),
-            }),
+            _ => Err(Error::InvalidReaderType { code: value }),
         }
     }
 
-    /// Convert the reader type to a u8 value.
+    /// Convert the reader type to a u8 value (modern encoding).
+    ///
+    /// Returns codes compatible with modern Henry devices:
+    /// - RFID: 1
+    /// - Biometric: 5
+    #[inline]
     #[must_use]
     pub fn to_u8(self) -> u8 {
         self as u8
+    }
+
+    /// Returns `true` if reader type is RFID.
+    #[inline]
+    #[must_use]
+    pub fn is_rfid(self) -> bool {
+        matches!(self, ReaderType::Rfid)
+    }
+
+    /// Returns `true` if reader type is Biometric.
+    #[inline]
+    #[must_use]
+    pub fn is_biometric(self) -> bool {
+        matches!(self, ReaderType::Biometric)
     }
 }
 
@@ -233,7 +286,15 @@ impl HenryTimestamp {
     ///
     /// # Errors
     /// Returns `Error::InvalidMessageFormat` if the timestamp string does not match
-    /// the expected format "dd/mm/yyyy hh:mm:ss".
+    /// the expected format "dd/mm/yyyy hh:mm:ss", or if the timestamp represents
+    /// an invalid local time (e.g., during DST transitions).
+    ///
+    /// # DST Handling
+    ///
+    /// During "spring forward" DST transitions, some times don't exist. During
+    /// "fall back" transitions, some times are ambiguous. This function:
+    /// - Returns error for non-existent times (spring forward gap)
+    /// - Chooses the earlier occurrence for ambiguous times (fall back)
     pub fn parse(s: &str) -> Result<Self> {
         let dt = chrono::NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S").map_err(|e| {
             Error::InvalidMessageFormat {
@@ -241,7 +302,15 @@ impl HenryTimestamp {
             }
         })?;
 
-        Ok(HenryTimestamp(Local.from_local_datetime(&dt).unwrap()))
+        // Handle DST ambiguity gracefully without panicking
+        let local_dt = Local
+            .from_local_datetime(&dt)
+            .earliest() // Choose first occurrence during "fall back"
+            .ok_or_else(|| Error::InvalidMessageFormat {
+                message: format!("Invalid local time '{s}' (possibly during DST transition)"),
+            })?;
+
+        Ok(HenryTimestamp(local_dt))
     }
 
     /// Format for Henry protocol (dd/mm/yyyy hh:mm:ss).
