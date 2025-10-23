@@ -1090,6 +1090,381 @@ cargo install cross
 echo "=== Configuração completa! ==="
 ```
 
+## 5. Interface de Usuário Terminal (TUI)
+
+### Visão Geral
+
+O emulador Turnkey fornece uma Interface de Usuário Terminal realística construída com `ratatui` que imita a aparência e comportamento de catracas físicas brasileiras (Primme SF, Henry Lumen).
+
+### Componentes Principais
+
+#### Display LCD (2 linhas × 40 colunas)
+- **Visual**: Fundo azul, texto branco, fonte em negrito
+- **Propósito**: Mostra mensagens do sistema, entrada do usuário e status
+- **Estados**: IDLE, VALIDATING, GRANTED, DENIED, WAITING_ROTATION
+- **Temas**: Padrão (azul), Escuro (preto/verde), Claro (branco), Verde (estilo LCD)
+
+#### Teclado Numérico
+- **Layout**: 4 linhas × 3 colunas (0-9, *, #)
+- **Botões**: ENTER, CANCEL, CLEAR
+- **Feedback Visual**: Destaque de teclas ao pressionar (cinza → amarelo)
+- **Entrada**: Entrada de código em buffer com validação de comprimento máximo
+
+#### Painel de Logs
+- **Tipo**: Log de eventos rolável, auto-atualizado
+- **Formato**: `[HH:MM:SS] Mensagem`
+- **Capacidade**: 1000 entradas (configurável)
+- **Cores**: Info (branco), Sucesso (verde), Aviso (amarelo), Erro (vermelho)
+- **Recursos**: Busca, navegação por rolagem, filtragem por timestamp
+
+#### Barra de Status
+- **Status das Leitoras**: RFID✓ BIO✗ KEYPAD✓ WIEGAND✗
+- **Estatísticas**: Contagem de eventos, contagem de usuários, uso de armazenamento
+- **Rede**: Status de conexão, endereço IP, modo (ONLINE/OFFLINE)
+
+### Atalhos de Teclado
+
+| Tecla           | Ação                          |
+|-----------------|-------------------------------|
+| `0`-`9`, `*`, `#` | Entrada do teclado              |
+| `Enter`         | Confirmar / Enviar            |
+| `Escape`        | Cancelar entrada              |
+| `Backspace`     | Apagar último dígito          |
+| `Tab`           | Alternar foco (Display ↔ Logs) |
+| `F1`            | Mostrar ajuda                 |
+| `F5`            | Recarregar configuração       |
+| `F8`            | Exportar eventos              |
+| `F10`           | Menu de configurações         |
+| `q` ou `Ctrl+C` | Sair do emulador              |
+
+### Design Responsivo
+
+- **Mínimo**: 80 colunas × 24 linhas
+- **Ótimo**: 120 colunas × 30 linhas
+- **Layout**: 70% coluna emulador, 30% coluna logs
+- **Adaptação**: Ajusta proporções automaticamente com base no tamanho do terminal
+
+**Veja**: [Especificação TUI](tui-specification.md) para detalhes completos de design.
+
+---
+
+## 6. Modos de Operação
+
+O emulador suporta dois modos primários de operação que determinam como a validação de acesso é realizada.
+
+### Modo ONLINE (Testes de Produção)
+
+**Propósito**: Emular uma catraca física que envia solicitações de acesso para um cliente TCP externo para validação.
+
+**Características Principais**:
+- Emulador não tem lógica de validação (imita hardware real)
+- Cliente TCP toma todas as decisões de acesso
+- Relatórios de eventos e status em tempo real
+- Tratamento configurável de timeout e fallback
+
+**Configuração**:
+```toml
+[mode]
+online = true
+status_online = true       # Enviar heartbeat periódico
+event_online = true        # Enviar eventos em tempo real
+fallback_offline = true    # Mudar para offline em timeout
+
+[network]
+type = "tcp"
+tcp_mode = "server"        # Esperar conexões de clientes
+ip = "192.168.0.100"
+port = 3000
+```
+
+**Fluxo de Mensagens**:
+1. **Solicitação de Acesso** (Emulador → Cliente):
+   ```
+   01+REON+000+0]12345678]20/10/2025 14:30:00]1]0]
+   ```
+   - Número do cartão: `12345678`
+   - Timestamp: `20/10/2025 14:30:00`
+   - Direção: `1` (entrada), `2` (saída)
+
+2. **Resposta de Liberação** (Cliente → Emulador):
+   ```
+   01+REON+00+6]5]Acesso liberado]
+   ```
+   - Comando: `00+6` (liberar saída)
+   - Tempo de exibição: `5` segundos
+   - Mensagem: `Acesso liberado`
+
+3. **Eventos de Rotação**:
+   - **Aguardando**: `01+REON+000+80]...]`
+   - **Completo**: `01+REON+000+81]...]`
+   - **Timeout**: `01+REON+000+82]...]`
+
+**Tratamento de Timeout**:
+- Timeout padrão: 3000ms
+- Se `fallback_offline = true`: Mudar para modo OFFLINE
+- Se `fallback_offline = false`: Negar acesso, retornar ao IDLE
+
+### Modo OFFLINE (Operação Autônoma)
+
+**Propósito**: Validação local usando banco de dados SQLite sem dependências de rede.
+
+**Características Principais**:
+- Toda lógica de validação no emulador
+- Sem requisitos de rede
+- Banco de dados local de usuários/cartões
+- Adequado para testes e desenvolvimento
+
+**Configuração**:
+```toml
+[mode]
+online = false
+smart_mode = true
+local_registration = true
+
+[storage]
+database_path = "data/turnkey.db"
+max_events = 50000
+max_users = 5000
+```
+
+**Fluxo de Validação**:
+1. **Busca de Usuário**: Consultar por código, número de cartão ou biometria
+2. **Verificação de Validade**: Status ativo, período de validade
+3. **Verificação de Método de Acesso**: Verificar métodos permitidos (cartão, bio, teclado)
+4. **Liberar/Negar**: Exibir mensagem, registrar evento, simular rotação
+
+**Tabelas do Banco de Dados**:
+- `users` - Credenciais de usuário e permissões de acesso
+- `cards` - Associações de cartões RFID
+- `biometric_templates` - Dados de impressão digital
+- `access_logs` - Histórico completo de acesso
+
+### Modo Híbrido (Fallback)
+
+**Configuração**:
+```toml
+[mode]
+online = true
+fallback_offline = true
+fallback_timeout = 3000
+```
+
+**Comportamento**:
+1. Iniciar em modo ONLINE
+2. Em timeout de validação: Mudar para OFFLINE
+3. Consultar banco de dados local, liberar/negar localmente
+4. Exibir "MODO OFFLINE"
+5. Quando conexão restaurada: Sincronizar eventos, retornar ao ONLINE
+
+**Veja**: [Modos do Emulador](emulator-modes.md) para documentação detalhada de fluxo.
+
+---
+
+## 7. Sistema de Configuração
+
+### Arquivos de Configuração
+
+O emulador usa configuração baseada em TOML com um sistema de prioridade:
+
+**Locais dos Arquivos**:
+```
+config/
+├── default.toml         # Configuração padrão (commitado no git)
+├── local.toml           # Sobrescritas locais (gitignored)
+├── hardware.toml        # Configurações específicas de hardware
+└── logging.toml         # Configuração de logging
+```
+
+**Prioridade de Carregamento** (maior para menor):
+1. **Variáveis de Ambiente**: `TURNKEY_SECTION_KEY=value`
+2. **config/local.toml**: Sobrescritas de desenvolvimento
+3. **config/default.toml**: Configuração base
+
+### Seções Principais de Configuração
+
+#### [device] - Identidade do Dispositivo
+```toml
+id = 1                          # ID do dispositivo (01-99)
+model = "Turnkey Emulator"
+firmware_version = "1.0.0"
+protocol_version = "1.0.0.15"
+display_message = "DIGITE SEU CÓDIGO"  # Máx 40 caracteres
+```
+
+#### [mode] - Modo de Operação
+```toml
+online = true                   # true = ONLINE, false = OFFLINE
+status_online = true            # Enviar heartbeat
+event_online = true             # Enviar eventos em tempo real
+fallback_offline = true         # Fallback em timeout
+fallback_timeout = 3000         # Milissegundos
+```
+
+#### [network] - Configurações de Rede
+```toml
+type = "tcp"                    # tcp ou serial
+ip = "192.168.0.100"
+port = 3000
+tcp_mode = "server"             # server ou client
+dhcp = false
+```
+
+#### [readers] - Configuração das Leitoras
+```toml
+reader1 = "rfid"                # rfid, keypad, biometric, wiegand, disabled
+reader2 = "keypad"
+reader3 = "disabled"
+reader4 = "disabled"
+keypad_enabled = true
+keypad_timeout = 30             # segundos
+```
+
+#### [biometrics] - Configurações Biométricas
+```toml
+verify_card_with_bio = false    # Requerer impressão digital após cartão
+treat_1n = true                 # Modo de identificação 1:N
+auto_on = false                 # Auto-identificar por impressão digital
+sensitivity = 55                # 48-55 (maior = mais sensível)
+security_level = 80             # 48-82 (maior = mais rigoroso)
+```
+
+#### [storage] - Configurações de Banco de Dados
+```toml
+database_path = "data/turnkey.db"
+max_events = 100000
+max_users = 10000
+wal_enabled = true
+synchronous = "NORMAL"          # OFF, NORMAL, FULL
+backup_interval = 60            # minutos
+```
+
+#### [ui] - Configurações da Interface Terminal
+```toml
+enabled = true
+display_lines = 2
+display_cols = 40
+theme = "default"               # default, dark, light, green
+log_panel_height = 30           # porcentagem
+```
+
+### Recarga de Configuração em Tempo de Execução
+
+**Métodos**:
+- **Sinal**: `kill -HUP <pid>` (Linux)
+- **TUI**: Pressione `F5`
+- **API**: `POST /api/reload-config` (futuro)
+
+**Configurações Recarregáveis**: Mensagens de exibição, habilitar/desabilitar leitoras, níveis de log, tema da UI, timeouts
+
+**Requer Reinicialização**: IP/porta de rede, caminho do banco de dados, ID do dispositivo, modo de operação
+
+**Veja**: [Configuração do Emulador](emulator-configuration.md) para referência completa.
+
+---
+
+## 8. Importação/Exportação de Dados
+
+O emulador suporta múltiplos formatos de arquivo para operações em massa, backups e interoperabilidade com sistemas externos.
+
+### Formatos de Arquivo Suportados
+
+#### 1. Importação/Exportação de Usuários (`colaborador.txt`)
+**Formato**: Valores separados por pipe
+**Campos**: PIS, NOME, MATRICULA, CPF, VALIDADE_INICIO, VALIDADE_FIM, ATIVO, ALLOW_CARD, ALLOW_BIO, ALLOW_KEYPAD, CODIGO
+
+**Exemplo**:
+```
+12345678901|João da Silva|1001|12345678901|01/01/2025|31/12/2025|1|1|1|1|1234
+98765432101|Maria Santos|1002|98765432101|01/01/2025||1|1|0|1|5678
+```
+
+#### 2. Importação/Exportação de Cartões (`cartoes.txt`)
+**Formato**: Valores separados por pipe
+**Campos**: NUMERO_CARTAO, MATRICULA, VALIDADE_INICIO, VALIDADE_FIM, ATIVO
+
+**Exemplo**:
+```
+00000000000011912322|1001|01/01/2025|31/12/2025|1
+00000000000022823433|1002|01/01/2025||1
+```
+
+#### 3. Templates Biométricos (`biometria.txt`)
+**Formato**: Valores separados por pipe
+**Campos**: MATRICULA, POSICAO (índice de dedo 0-9), TEMPLATE_BASE64
+
+**Exemplo**:
+```
+1001|1|AQIDBAUG...BASE64...ENCODED==
+1001|6|BQYHCQ0K...BASE64...ENCODED==
+```
+
+#### 4. Exportação de Logs de Acesso (`eventos.txt`)
+**Formato**: Valores separados por pipe
+**Campos**: NSR, DATA_HORA, MATRICULA, CARTAO, TIPO_EVENTO, DIRECAO, DISPOSITIVO, VALIDACAO, NOME
+
+**Exemplo**:
+```
+1|20/10/2025 08:15:23|1001|00000000000011912322|0|1|01|O|João da Silva
+2|20/10/2025 09:30:12|1002|00000000000022823433|0|1|01|F|Maria Santos
+```
+
+#### 5. Formato AFD (Padrão Legal Brasileiro)
+**Propósito**: Conformidade com controle de ponto e controle de acesso (Portaria 1510/2009)
+**Estrutura**:
+- Registro Tipo 1: Cabeçalho (CNPJ, nome da empresa, período)
+- Registro Tipo 2: Identificação do dispositivo
+- Registro Tipo 3: Eventos de acesso
+- Registro Tipo 9: Trailer (contagem de registros)
+
+**Exemplo**:
+```
+1|12345678000190||EMPRESA EXEMPLO LTDA|01102025|20102025|20102025143000
+2|1|TK00000001|Turnkey Emulator|1.0.0
+3|000001|20102025|081523|12345678901
+9|3
+```
+
+### Comandos de Importação/Exportação em Massa
+
+**Importar Todos os Dados**:
+```bash
+turnkey-cli import bulk ./import-data/
+```
+
+**Comandos de Exportação**:
+```bash
+# Exportar usuários
+turnkey-cli export colaborador --output colaborador-backup.txt
+
+# Exportar cartões
+turnkey-cli export cartoes --output cartoes-backup.txt
+
+# Exportar eventos com intervalo de datas
+turnkey-cli export eventos \
+  --start-date "01/10/2025" \
+  --end-date "31/10/2025" \
+  --output eventos-outubro.txt
+
+# Exportar formato AFD
+turnkey-cli export afd \
+  --cnpj "12345678000190" \
+  --razao-social "Empresa Exemplo" \
+  --start-date "01/10/2025" \
+  --end-date "31/10/2025" \
+  --output afd-outubro.txt
+```
+
+### Comportamento Transacional
+
+- Todas as importações envolvidas em transação de banco de dados
+- Rollback em qualquer falha de validação
+- Registros duplicados ignorados com aviso
+- Progresso mostrado para arquivos grandes (>1000 registros)
+
+**Veja**: [Formatos de Dados](data-formats.md) para especificações completas de formato.
+
+---
+
 ## 14. Justificativa Técnica
 
 ### **Bibliotecas Selecionadas:**
@@ -1101,6 +1476,7 @@ echo "=== Configuração completa! ==="
 5. **PCSC** - Interface padrão para leitores de cartão inteligente no Linux
 6. **HidAPI** - Acesso multiplataforma a dispositivos USB HID
 7. **DashMap** - HashMap concorrente sem bloqueio para alto desempenho
+8. **Ratatui** - Framework TUI moderno, ativamente mantido com excelente documentação
 
 ### **Arquitetura:**
 
@@ -1122,4 +1498,29 @@ echo "=== Configuração completa! ==="
 - **Compilação Cruzada**: Suporta x64, ARM64, ARMv7 (Raspberry Pi)
 - **Rust 1.90+**: Recursos modernos, traits assíncronos estáveis
 - **Edição Rust**: 2024
+
+---
+
+## 15. Referências
+
+### Documentação Principal
+- [README.md](../README.md) - Visão geral do projeto e início rápido
+- [CLAUDE.md](../CLAUDE.md) - Guia de desenvolvimento para Claude Code
+
+### Arquitetura e Design
+- [Arquitetura do Emulador](emulator-architecture.md) - Arquitetura do sistema e design de componentes
+- [Modos do Emulador](emulator-modes.md) - Modos de operação ONLINE vs OFFLINE
+- [Especificação TUI](tui-specification.md) - Design da Interface de Usuário Terminal
+
+### Configuração e Dados
+- [Configuração do Emulador](emulator-configuration.md) - Referência completa de configuração TOML
+- [Formatos de Dados](data-formats.md) - Especificações de formato de arquivo de importação/exportação
+
+### Protocolo
+- [Guia do Protocolo Henry](turnkey-protocol-guide-en.md) - Especificação do protocolo Henry
+- [Comandos do Cliente Henry](henry-client-emulator-commands.md) - Comandos descobertos do cliente oficial
+
+### Hardware
+- [Guia de Configuração de Hardware](hardware-setup.md) - Integração de hardware físico
+- [Manual Primme SF](Catraca Sf item 01.pdf) - Documentação do equipamento original
 ```

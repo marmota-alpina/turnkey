@@ -1090,6 +1090,381 @@ cargo install cross
 echo "=== Setup complete! ==="
 ```
 
+## 5. Terminal User Interface (TUI)
+
+### Overview
+
+The Turnkey emulator provides a realistic Terminal User Interface built with `ratatui` that mimics the appearance and behavior of physical Brazilian turnstiles (Primme SF, Henry Lumen).
+
+### Main Components
+
+#### Display LCD (2 lines × 40 columns)
+- **Visual**: Blue background, white text, bold font
+- **Purpose**: Shows system messages, user input, and status
+- **States**: IDLE, VALIDATING, GRANTED, DENIED, WAITING_ROTATION
+- **Themes**: Default (blue), Dark (black/green), Light (white), Green (LCD-style)
+
+#### Numeric Keypad
+- **Layout**: 4 rows × 3 columns (0-9, *, #)
+- **Buttons**: ENTER, CANCEL, CLEAR
+- **Visual Feedback**: Key highlighting on press (gray → yellow)
+- **Input**: Buffered code entry with max length validation
+
+#### Logs Panel
+- **Type**: Scrollable, auto-updating event log
+- **Format**: `[HH:MM:SS] Message`
+- **Capacity**: 1000 entries (configurable)
+- **Colors**: Info (white), Success (green), Warning (yellow), Error (red)
+- **Features**: Search, scroll navigation, timestamp filtering
+
+#### Status Bar
+- **Reader Status**: RFID✓ BIO✗ KEYPAD✓ WIEGAND✗
+- **Statistics**: Event count, user count, storage usage
+- **Network**: Connection status, IP address, mode (ONLINE/OFFLINE)
+
+### Keyboard Shortcuts
+
+| Key             | Action                        |
+|-----------------|-------------------------------|
+| `0`-`9`, `*`, `#` | Keypad input                  |
+| `Enter`         | Confirm / Submit              |
+| `Escape`        | Cancel input                  |
+| `Backspace`     | Clear last digit              |
+| `Tab`           | Switch focus (Display ↔ Logs) |
+| `F1`            | Show help                     |
+| `F5`            | Reload configuration          |
+| `F8`            | Export events                 |
+| `F10`           | Settings menu                 |
+| `q` or `Ctrl+C` | Quit emulator                 |
+
+### Responsive Design
+
+- **Minimum**: 80 columns × 24 lines
+- **Optimal**: 120 columns × 30 lines
+- **Layout**: 70% emulator column, 30% logs column
+- **Adaptation**: Auto-adjusts proportions based on terminal size
+
+**See**: [TUI Specification](tui-specification.md) for complete design details.
+
+---
+
+## 6. Operation Modes
+
+The emulator supports two primary operation modes that determine how access validation is performed.
+
+### ONLINE Mode (Production Testing)
+
+**Purpose**: Emulate a physical turnstile that sends access requests to an external TCP client for validation.
+
+**Key Characteristics**:
+- Emulator has no validation logic (mimics real hardware)
+- TCP client makes all access decisions
+- Real-time event and status reporting
+- Configurable timeout and fallback handling
+
+**Configuration**:
+```toml
+[mode]
+online = true
+status_online = true       # Send periodic heartbeat
+event_online = true        # Send events in real-time
+fallback_offline = true    # Switch to offline on timeout
+
+[network]
+type = "tcp"
+tcp_mode = "server"        # Wait for client connections
+ip = "192.168.0.100"
+port = 3000
+```
+
+**Message Flow**:
+1. **Access Request** (Emulator → Client):
+   ```
+   01+REON+000+0]12345678]20/10/2025 14:30:00]1]0]
+   ```
+   - Card number: `12345678`
+   - Timestamp: `20/10/2025 14:30:00`
+   - Direction: `1` (entry), `2` (exit)
+
+2. **Grant Response** (Client → Emulator):
+   ```
+   01+REON+00+6]5]Acesso liberado]
+   ```
+   - Command: `00+6` (grant exit)
+   - Display time: `5` seconds
+   - Message: `Acesso liberado`
+
+3. **Rotation Events**:
+   - **Waiting**: `01+REON+000+80]...]`
+   - **Complete**: `01+REON+000+81]...]`
+   - **Timeout**: `01+REON+000+82]...]`
+
+**Timeout Handling**:
+- Default timeout: 3000ms
+- If `fallback_offline = true`: Switch to OFFLINE mode
+- If `fallback_offline = false`: Deny access, return to IDLE
+
+### OFFLINE Mode (Standalone Operation)
+
+**Purpose**: Local validation using SQLite database without network dependencies.
+
+**Key Characteristics**:
+- All validation logic in emulator
+- No network requirements
+- Local user/card database
+- Suitable for testing and development
+
+**Configuration**:
+```toml
+[mode]
+online = false
+smart_mode = true
+local_registration = true
+
+[storage]
+database_path = "data/turnkey.db"
+max_events = 50000
+max_users = 5000
+```
+
+**Validation Flow**:
+1. **User Lookup**: Query by code, card number, or biometric
+2. **Validity Check**: Active status, validity period
+3. **Access Method Check**: Verify allowed methods (card, bio, keypad)
+4. **Grant/Deny**: Display message, log event, simulate rotation
+
+**Database Tables**:
+- `users` - User credentials and access permissions
+- `cards` - RFID card associations
+- `biometric_templates` - Fingerprint data
+- `access_logs` - Complete access history
+
+### Hybrid Mode (Fallback)
+
+**Configuration**:
+```toml
+[mode]
+online = true
+fallback_offline = true
+fallback_timeout = 3000
+```
+
+**Behavior**:
+1. Start in ONLINE mode
+2. On validation timeout: Switch to OFFLINE
+3. Query local database, grant/deny locally
+4. Display "MODO OFFLINE"
+5. When connection restored: Sync events, return to ONLINE
+
+**See**: [Emulator Modes](emulator-modes.md) for detailed flow documentation.
+
+---
+
+## 7. Configuration System
+
+### Configuration Files
+
+The emulator uses TOML-based configuration with a priority system:
+
+**File Locations**:
+```
+config/
+├── default.toml         # Default configuration (committed to git)
+├── local.toml           # Local overrides (gitignored)
+├── hardware.toml        # Hardware-specific settings
+└── logging.toml         # Logging configuration
+```
+
+**Load Priority** (highest to lowest):
+1. **Environment Variables**: `TURNKEY_SECTION_KEY=value`
+2. **config/local.toml**: Development overrides
+3. **config/default.toml**: Baseline configuration
+
+### Main Configuration Sections
+
+#### [device] - Device Identity
+```toml
+id = 1                          # Device ID (01-99)
+model = "Turnkey Emulator"
+firmware_version = "1.0.0"
+protocol_version = "1.0.0.15"
+display_message = "DIGITE SEU CÓDIGO"  # Max 40 characters
+```
+
+#### [mode] - Operation Mode
+```toml
+online = true                   # true = ONLINE, false = OFFLINE
+status_online = true            # Send heartbeat
+event_online = true             # Send events in real-time
+fallback_offline = true         # Fallback on timeout
+fallback_timeout = 3000         # Milliseconds
+```
+
+#### [network] - Network Settings
+```toml
+type = "tcp"                    # tcp or serial
+ip = "192.168.0.100"
+port = 3000
+tcp_mode = "server"             # server or client
+dhcp = false
+```
+
+#### [readers] - Reader Configuration
+```toml
+reader1 = "rfid"                # rfid, keypad, biometric, wiegand, disabled
+reader2 = "keypad"
+reader3 = "disabled"
+reader4 = "disabled"
+keypad_enabled = true
+keypad_timeout = 30             # seconds
+```
+
+#### [biometrics] - Biometric Settings
+```toml
+verify_card_with_bio = false    # Require fingerprint after card
+treat_1n = true                 # 1:N identification mode
+auto_on = false                 # Auto-identify by fingerprint
+sensitivity = 55                # 48-55 (higher = more sensitive)
+security_level = 80             # 48-82 (higher = stricter)
+```
+
+#### [storage] - Database Settings
+```toml
+database_path = "data/turnkey.db"
+max_events = 100000
+max_users = 10000
+wal_enabled = true
+synchronous = "NORMAL"          # OFF, NORMAL, FULL
+backup_interval = 60            # minutes
+```
+
+#### [ui] - Terminal UI Settings
+```toml
+enabled = true
+display_lines = 2
+display_cols = 40
+theme = "default"               # default, dark, light, green
+log_panel_height = 30           # percentage
+```
+
+### Runtime Configuration Reload
+
+**Methods**:
+- **Signal**: `kill -HUP <pid>` (Linux)
+- **TUI**: Press `F5`
+- **API**: `POST /api/reload-config` (future)
+
+**Reloadable Settings**: Display messages, reader enable/disable, log levels, UI theme, timeouts
+
+**Requires Restart**: Network IP/port, database path, device ID, operation mode
+
+**See**: [Emulator Configuration](emulator-configuration.md) for complete reference.
+
+---
+
+## 8. Data Import/Export
+
+The emulator supports multiple file formats for bulk operations, backups, and interoperability with external systems.
+
+### Supported File Formats
+
+#### 1. User Import/Export (`colaborador.txt`)
+**Format**: Pipe-separated values
+**Fields**: PIS, NOME, MATRICULA, CPF, VALIDADE_INICIO, VALIDADE_FIM, ATIVO, ALLOW_CARD, ALLOW_BIO, ALLOW_KEYPAD, CODIGO
+
+**Example**:
+```
+12345678901|João da Silva|1001|12345678901|01/01/2025|31/12/2025|1|1|1|1|1234
+98765432101|Maria Santos|1002|98765432101|01/01/2025||1|1|0|1|5678
+```
+
+#### 2. Card Import/Export (`cartoes.txt`)
+**Format**: Pipe-separated values
+**Fields**: NUMERO_CARTAO, MATRICULA, VALIDADE_INICIO, VALIDADE_FIM, ATIVO
+
+**Example**:
+```
+00000000000011912322|1001|01/01/2025|31/12/2025|1
+00000000000022823433|1002|01/01/2025||1
+```
+
+#### 3. Biometric Templates (`biometria.txt`)
+**Format**: Pipe-separated values
+**Fields**: MATRICULA, POSICAO (0-9 finger index), TEMPLATE_BASE64
+
+**Example**:
+```
+1001|1|AQIDBAUG...BASE64...ENCODED==
+1001|6|BQYHCQ0K...BASE64...ENCODED==
+```
+
+#### 4. Access Logs Export (`eventos.txt`)
+**Format**: Pipe-separated values
+**Fields**: NSR, DATA_HORA, MATRICULA, CARTAO, TIPO_EVENTO, DIRECAO, DISPOSITIVO, VALIDACAO, NOME
+
+**Example**:
+```
+1|20/10/2025 08:15:23|1001|00000000000011912322|0|1|01|O|João da Silva
+2|20/10/2025 09:30:12|1002|00000000000022823433|0|1|01|F|Maria Santos
+```
+
+#### 5. AFD Format (Brazilian Legal Standard)
+**Purpose**: Time-tracking and access control compliance (Portaria 1510/2009)
+**Structure**:
+- Record Type 1: Header (CNPJ, company name, period)
+- Record Type 2: Device identification
+- Record Type 3: Access events
+- Record Type 9: Trailer (record count)
+
+**Example**:
+```
+1|12345678000190||EMPRESA EXEMPLO LTDA|01102025|20102025|20102025143000
+2|1|TK00000001|Turnkey Emulator|1.0.0
+3|000001|20102025|081523|12345678901
+9|3
+```
+
+### Bulk Import/Export Commands
+
+**Import All Data**:
+```bash
+turnkey-cli import bulk ./import-data/
+```
+
+**Export Commands**:
+```bash
+# Export users
+turnkey-cli export colaborador --output colaborador-backup.txt
+
+# Export cards
+turnkey-cli export cartoes --output cartoes-backup.txt
+
+# Export events with date range
+turnkey-cli export eventos \
+  --start-date "01/10/2025" \
+  --end-date "31/10/2025" \
+  --output eventos-outubro.txt
+
+# Export AFD format
+turnkey-cli export afd \
+  --cnpj "12345678000190" \
+  --razao-social "Empresa Exemplo" \
+  --start-date "01/10/2025" \
+  --end-date "31/10/2025" \
+  --output afd-outubro.txt
+```
+
+### Transaction Behavior
+
+- All imports wrapped in database transaction
+- Rollback on any validation failure
+- Duplicate records skipped with warning
+- Progress shown for large files (>1000 records)
+
+**See**: [Data Formats](data-formats.md) for complete format specifications.
+
+---
+
 ## 14. Technical Justification
 
 ### **Libraries Selected:**
@@ -1101,6 +1476,7 @@ echo "=== Setup complete! ==="
 5. **PCSC** - Standard interface for smart card readers on Linux
 6. **HidAPI** - Cross-platform access to USB HID devices
 7. **DashMap** - Lock-free concurrent HashMap for high performance
+8. **Ratatui** - Modern, actively maintained TUI framework with excellent documentation
 
 ### **Architecture:**
 
@@ -1122,4 +1498,29 @@ echo "=== Setup complete! ==="
 - **Cross-compilation**: Supports x64, ARM64, ARMv7 (Raspberry Pi)
 - **Rust 1.90+**: Modern features, stable async traits
 - **Rust edition**: 2024
+
+---
+
+## 15. References
+
+### Core Documentation
+- [README.md](../README.md) - Project overview and quick start
+- [CLAUDE.md](../CLAUDE.md) - Development guide for Claude Code
+
+### Architecture and Design
+- [Emulator Architecture](emulator-architecture.md) - System architecture and component design
+- [Emulator Modes](emulator-modes.md) - ONLINE vs OFFLINE operation modes
+- [TUI Specification](tui-specification.md) - Terminal User Interface design
+
+### Configuration and Data
+- [Emulator Configuration](emulator-configuration.md) - Complete TOML configuration reference
+- [Data Formats](data-formats.md) - Import/export file format specifications
+
+### Protocol
+- [Henry Protocol Guide](turnkey-protocol-guide-en.md) - Henry protocol specification
+- [Henry Client Commands](henry-client-emulator-commands.md) - Commands discovered from official client
+
+### Hardware
+- [Hardware Setup Guide](hardware-setup.md) - Physical hardware integration
+- [Primme SF Manual](Catraca Sf item 01.pdf) - Original equipment documentation
 ```
