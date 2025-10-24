@@ -140,7 +140,6 @@ Use the PR template to provide:
 - Add rustdoc comments for all public items
 - Include examples in documentation
 - Document error conditions
-- Keep CLAUDE.md updated for major changes
 
 ### Error Handling
 

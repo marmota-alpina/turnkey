@@ -1505,7 +1505,6 @@ turnkey-cli export afd \
 
 ### Core Documentation
 - [README.md](../README.md) - Project overview and quick start
-- [CLAUDE.md](../CLAUDE.md) - Development guide for Claude Code
 
 ### Architecture and Design
 - [Emulator Architecture](emulator-architecture.md) - System architecture and component design
