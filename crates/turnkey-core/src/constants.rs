@@ -37,6 +37,10 @@ pub const MAX_DEVICE_ID: u8 = 99;
 /// Display message
 pub const MAX_DISPLAY_MESSAGE_LENGTH: usize = 40;
 
+/// Response display timeouts (seconds)
+pub const DEFAULT_GRANT_TIMEOUT_SECONDS: u8 = 5;
+pub const DEFAULT_DENY_TIMEOUT_SECONDS: u8 = 0;
+
 /// Default messages
 pub const MSG_ACCESS_GRANTED: &str = "Acesso liberado";
 pub const MSG_ACCESS_DENIED: &str = "Acesso negado";

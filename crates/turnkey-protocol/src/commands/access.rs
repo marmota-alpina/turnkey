@@ -55,15 +55,17 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use turnkey_core::constants::{
+    DEFAULT_DENY_TIMEOUT_SECONDS, DEFAULT_GRANT_TIMEOUT_SECONDS, MAX_CARD_LENGTH,
+    MAX_DISPLAY_MESSAGE_LENGTH, MIN_CARD_LENGTH,
+};
 use turnkey_core::{AccessDirection, Error, HenryTimestamp, ReaderType, Result};
 
-/// Minimum card number length in characters
-const MIN_CARD_LENGTH: usize = 3;
-
-/// Maximum card number length in characters
-const MAX_CARD_LENGTH: usize = 20;
-
-/// Maximum field length to prevent DoS attacks
+/// Maximum field length to prevent DoS attacks.
+///
+/// This is a security measure specific to the protocol parser to prevent
+/// denial-of-service attacks via oversized fields. Unlike protocol-defined
+/// limits (like MAX_CARD_LENGTH), this is an implementation-specific safeguard.
 const MAX_FIELD_LENGTH: usize = 256;
 
 /// Access request from a turnstile device.
@@ -361,6 +363,360 @@ impl AccessRequest {
     /// Returns `true` if biometric reader was used.
     pub fn is_biometric(&self) -> bool {
         self.reader_type.is_biometric()
+    }
+}
+
+/// Access control decision made by the server.
+///
+/// Represents the server's decision on an access request, specifying
+/// whether to grant or deny access and in which direction(s).
+///
+/// # Protocol Mapping
+///
+/// Each decision maps to a specific Henry protocol command code:
+/// - `GrantBoth`: 00+1 (allow passage in both directions)
+/// - `GrantEntry`: 00+5 (allow entry only)
+/// - `GrantExit`: 00+6 (allow exit only)
+/// - `Deny`: 00+30 (deny access)
+///
+/// # Examples
+///
+/// ```
+/// use turnkey_protocol::commands::access::AccessDecision;
+///
+/// let decision = AccessDecision::GrantExit;
+/// assert_eq!(decision.command_code(), "00+6");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AccessDecision {
+    /// Grant access in both entry and exit directions.
+    ///
+    /// Used for turnstiles that support bidirectional passage.
+    GrantBoth,
+
+    /// Grant access for entry only.
+    ///
+    /// The turnstile will only allow passage in the entry direction.
+    GrantEntry,
+
+    /// Grant access for exit only.
+    ///
+    /// The turnstile will only allow passage in the exit direction.
+    GrantExit,
+
+    /// Deny access.
+    ///
+    /// The turnstile will remain locked and display a denial message.
+    Deny,
+}
+
+impl AccessDecision {
+    /// Get the command code for this decision.
+    ///
+    /// Returns the Henry protocol command code string that represents
+    /// this access decision.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessDecision;
+    ///
+    /// assert_eq!(AccessDecision::GrantBoth.command_code(), "00+1");
+    /// assert_eq!(AccessDecision::GrantEntry.command_code(), "00+5");
+    /// assert_eq!(AccessDecision::GrantExit.command_code(), "00+6");
+    /// assert_eq!(AccessDecision::Deny.command_code(), "00+30");
+    /// ```
+    pub fn command_code(&self) -> &'static str {
+        match self {
+            Self::GrantBoth => "00+1",
+            Self::GrantEntry => "00+5",
+            Self::GrantExit => "00+6",
+            Self::Deny => "00+30",
+        }
+    }
+
+    /// Returns `true` if this decision grants access.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessDecision;
+    ///
+    /// assert!(AccessDecision::GrantBoth.is_grant());
+    /// assert!(AccessDecision::GrantEntry.is_grant());
+    /// assert!(AccessDecision::GrantExit.is_grant());
+    /// assert!(!AccessDecision::Deny.is_grant());
+    /// ```
+    pub fn is_grant(&self) -> bool {
+        matches!(self, Self::GrantBoth | Self::GrantEntry | Self::GrantExit)
+    }
+
+    /// Returns `true` if this decision denies access.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessDecision;
+    ///
+    /// assert!(AccessDecision::Deny.is_deny());
+    /// assert!(!AccessDecision::GrantBoth.is_deny());
+    /// ```
+    pub fn is_deny(&self) -> bool {
+        matches!(self, Self::Deny)
+    }
+}
+
+/// Access response message sent to turnstile.
+///
+/// Represents the server's response to an access request, containing
+/// the decision (grant/deny), display message, and timeout configuration.
+///
+/// # Protocol Format
+///
+/// Response messages follow this format:
+///
+/// ```text
+/// <ID>+REON+<COMMAND>]<TIMEOUT>]<MESSAGE>]
+/// ```
+///
+/// Where:
+/// - `COMMAND`: Decision command code (00+1, 00+5, 00+6, or 00+30)
+/// - `TIMEOUT`: Display timeout in seconds (0 for permanent)
+/// - `MESSAGE`: Text to display on turnstile LCD (max 40 chars)
+///
+/// # Examples
+///
+/// ## Grant Exit Access
+///
+/// ```
+/// use turnkey_protocol::commands::access::{AccessResponse, AccessDecision};
+///
+/// let response = AccessResponse::new(
+///     AccessDecision::GrantExit,
+///     5,
+///     "Acesso liberado".to_string(),
+/// );
+///
+/// assert_eq!(response.decision(), AccessDecision::GrantExit);
+/// assert_eq!(response.timeout_seconds(), 5);
+/// assert_eq!(response.display_message(), "Acesso liberado");
+/// ```
+///
+/// ## Deny Access
+///
+/// ```
+/// use turnkey_protocol::commands::access::{AccessResponse, AccessDecision};
+///
+/// let response = AccessResponse::new(
+///     AccessDecision::Deny,
+///     0,
+///     "Acesso negado".to_string(),
+/// );
+///
+/// assert_eq!(response.decision(), AccessDecision::Deny);
+/// assert_eq!(response.timeout_seconds(), 0);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccessResponse {
+    decision: AccessDecision,
+    timeout_seconds: u8,
+    display_message: String,
+}
+
+impl AccessResponse {
+    /// Create a new access response.
+    ///
+    /// # Arguments
+    ///
+    /// * `decision` - The access control decision
+    /// * `timeout_seconds` - Display timeout in seconds (0 for permanent)
+    /// * `display_message` - Message to show on turnstile LCD
+    ///
+    /// # Display Message Truncation
+    ///
+    /// Messages longer than 40 characters are automatically truncated to
+    /// comply with protocol constraints.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::{AccessResponse, AccessDecision};
+    ///
+    /// let response = AccessResponse::new(
+    ///     AccessDecision::GrantEntry,
+    ///     3,
+    ///     "Bem-vindo".to_string(),
+    /// );
+    ///
+    /// assert_eq!(response.decision(), AccessDecision::GrantEntry);
+    /// ```
+    ///
+    /// ## Message Truncation
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::{AccessResponse, AccessDecision};
+    ///
+    /// let long_message = "A".repeat(50);
+    /// let response = AccessResponse::new(
+    ///     AccessDecision::GrantBoth,
+    ///     5,
+    ///     long_message,
+    /// );
+    ///
+    /// assert_eq!(response.display_message().len(), 40);
+    /// ```
+    pub fn new(decision: AccessDecision, timeout_seconds: u8, display_message: String) -> Self {
+        // Truncate message to maximum allowed length
+        let truncated_message = if display_message.len() > MAX_DISPLAY_MESSAGE_LENGTH {
+            display_message
+                .chars()
+                .take(MAX_DISPLAY_MESSAGE_LENGTH)
+                .collect()
+        } else {
+            display_message
+        };
+
+        Self {
+            decision,
+            timeout_seconds,
+            display_message: truncated_message,
+        }
+    }
+
+    /// Create a grant both directions response with default timeout.
+    ///
+    /// Uses a default timeout of 5 seconds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessResponse;
+    ///
+    /// let response = AccessResponse::grant_both("Acesso liberado".to_string());
+    /// assert_eq!(response.timeout_seconds(), 5);
+    /// ```
+    pub fn grant_both(display_message: String) -> Self {
+        Self::new(
+            AccessDecision::GrantBoth,
+            DEFAULT_GRANT_TIMEOUT_SECONDS,
+            display_message,
+        )
+    }
+
+    /// Create a grant entry response with default timeout.
+    ///
+    /// Uses a default timeout of 5 seconds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessResponse;
+    ///
+    /// let response = AccessResponse::grant_entry("Bem-vindo".to_string());
+    /// assert_eq!(response.timeout_seconds(), 5);
+    /// ```
+    pub fn grant_entry(display_message: String) -> Self {
+        Self::new(
+            AccessDecision::GrantEntry,
+            DEFAULT_GRANT_TIMEOUT_SECONDS,
+            display_message,
+        )
+    }
+
+    /// Create a grant exit response with default timeout.
+    ///
+    /// Uses a default timeout of 5 seconds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessResponse;
+    ///
+    /// let response = AccessResponse::grant_exit("Acesso liberado".to_string());
+    /// assert_eq!(response.timeout_seconds(), 5);
+    /// ```
+    pub fn grant_exit(display_message: String) -> Self {
+        Self::new(
+            AccessDecision::GrantExit,
+            DEFAULT_GRANT_TIMEOUT_SECONDS,
+            display_message,
+        )
+    }
+
+    /// Create a deny access response.
+    ///
+    /// Uses a timeout of 0 (permanent until next action).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::AccessResponse;
+    ///
+    /// let response = AccessResponse::deny("Acesso negado".to_string());
+    /// assert_eq!(response.timeout_seconds(), 0);
+    /// ```
+    pub fn deny(display_message: String) -> Self {
+        Self::new(
+            AccessDecision::Deny,
+            DEFAULT_DENY_TIMEOUT_SECONDS,
+            display_message,
+        )
+    }
+
+    /// Convert response to protocol message fields.
+    ///
+    /// Returns the fields in the order required by the Henry protocol:
+    /// 1. Command code (decision)
+    /// 2. Timeout in seconds
+    /// 3. Display message
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::access::{AccessResponse, AccessDecision};
+    ///
+    /// let response = AccessResponse::new(
+    ///     AccessDecision::GrantExit,
+    ///     5,
+    ///     "Acesso liberado".to_string(),
+    /// );
+    ///
+    /// let fields = response.to_fields();
+    /// assert_eq!(fields[0], "00+6");
+    /// assert_eq!(fields[1], "5");
+    /// assert_eq!(fields[2], "Acesso liberado");
+    /// ```
+    pub fn to_fields(&self) -> Vec<String> {
+        vec![
+            self.decision.command_code().to_string(),
+            self.timeout_seconds.to_string(),
+            self.display_message.clone(),
+        ]
+    }
+
+    /// Get the access decision.
+    pub fn decision(&self) -> AccessDecision {
+        self.decision
+    }
+
+    /// Get the timeout in seconds.
+    pub fn timeout_seconds(&self) -> u8 {
+        self.timeout_seconds
+    }
+
+    /// Get the display message.
+    pub fn display_message(&self) -> &str {
+        &self.display_message
+    }
+
+    /// Returns `true` if this response grants access.
+    pub fn is_grant(&self) -> bool {
+        self.decision.is_grant()
+    }
+
+    /// Returns `true` if this response denies access.
+    pub fn is_deny(&self) -> bool {
+        self.decision.is_deny()
     }
 }
 
@@ -837,5 +1193,280 @@ mod tests {
 
         let result = AccessRequest::parse(&fields);
         assert!(result.is_err());
+    }
+
+    // AccessDecision tests
+
+    #[test]
+    fn test_access_decision_command_codes() {
+        assert_eq!(AccessDecision::GrantBoth.command_code(), "00+1");
+        assert_eq!(AccessDecision::GrantEntry.command_code(), "00+5");
+        assert_eq!(AccessDecision::GrantExit.command_code(), "00+6");
+        assert_eq!(AccessDecision::Deny.command_code(), "00+30");
+    }
+
+    #[test]
+    fn test_access_decision_is_grant() {
+        assert!(AccessDecision::GrantBoth.is_grant());
+        assert!(AccessDecision::GrantEntry.is_grant());
+        assert!(AccessDecision::GrantExit.is_grant());
+        assert!(!AccessDecision::Deny.is_grant());
+    }
+
+    #[test]
+    fn test_access_decision_is_deny() {
+        assert!(AccessDecision::Deny.is_deny());
+        assert!(!AccessDecision::GrantBoth.is_deny());
+        assert!(!AccessDecision::GrantEntry.is_deny());
+        assert!(!AccessDecision::GrantExit.is_deny());
+    }
+
+    // AccessResponse tests
+
+    #[test]
+    fn test_access_response_grant_exit() {
+        let response =
+            AccessResponse::new(AccessDecision::GrantExit, 5, "Acesso liberado".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::GrantExit);
+        assert_eq!(response.timeout_seconds(), 5);
+        assert_eq!(response.display_message(), "Acesso liberado");
+        assert!(response.is_grant());
+        assert!(!response.is_deny());
+    }
+
+    #[test]
+    fn test_access_response_grant_entry() {
+        let response = AccessResponse::new(AccessDecision::GrantEntry, 3, "Bem-vindo".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::GrantEntry);
+        assert_eq!(response.timeout_seconds(), 3);
+        assert_eq!(response.display_message(), "Bem-vindo");
+        assert!(response.is_grant());
+    }
+
+    #[test]
+    fn test_access_response_grant_both() {
+        let response =
+            AccessResponse::new(AccessDecision::GrantBoth, 5, "Acesso liberado".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::GrantBoth);
+        assert_eq!(response.timeout_seconds(), 5);
+        assert!(response.is_grant());
+    }
+
+    #[test]
+    fn test_access_response_deny() {
+        let response = AccessResponse::new(AccessDecision::Deny, 0, "Acesso negado".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::Deny);
+        assert_eq!(response.timeout_seconds(), 0);
+        assert_eq!(response.display_message(), "Acesso negado");
+        assert!(!response.is_grant());
+        assert!(response.is_deny());
+    }
+
+    #[test]
+    fn test_access_response_to_fields_grant_exit() {
+        let response =
+            AccessResponse::new(AccessDecision::GrantExit, 5, "Acesso liberado".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields.len(), 3);
+        assert_eq!(fields[0], "00+6");
+        assert_eq!(fields[1], "5");
+        assert_eq!(fields[2], "Acesso liberado");
+    }
+
+    #[test]
+    fn test_access_response_to_fields_grant_entry() {
+        let response = AccessResponse::new(AccessDecision::GrantEntry, 3, "Bem-vindo".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+5");
+        assert_eq!(fields[1], "3");
+        assert_eq!(fields[2], "Bem-vindo");
+    }
+
+    #[test]
+    fn test_access_response_to_fields_grant_both() {
+        let response =
+            AccessResponse::new(AccessDecision::GrantBoth, 5, "Acesso liberado".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+1");
+        assert_eq!(fields[1], "5");
+    }
+
+    #[test]
+    fn test_access_response_to_fields_deny() {
+        let response = AccessResponse::new(AccessDecision::Deny, 0, "Acesso negado".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+30");
+        assert_eq!(fields[1], "0");
+        assert_eq!(fields[2], "Acesso negado");
+    }
+
+    #[test]
+    fn test_access_response_message_truncation() {
+        // Message longer than 40 characters should be truncated
+        let long_message = "A".repeat(50);
+        let response = AccessResponse::new(AccessDecision::GrantBoth, 5, long_message);
+
+        assert_eq!(response.display_message().len(), 40);
+        assert_eq!(response.display_message(), &"A".repeat(40));
+    }
+
+    #[test]
+    fn test_access_response_message_exact_limit() {
+        // Message exactly 40 characters should not be truncated
+        let message = "A".repeat(40);
+        let response = AccessResponse::new(AccessDecision::GrantEntry, 3, message.clone());
+
+        assert_eq!(response.display_message().len(), 40);
+        assert_eq!(response.display_message(), message);
+    }
+
+    #[test]
+    fn test_access_response_message_under_limit() {
+        // Message under 40 characters should remain unchanged
+        let message = "Acesso liberado";
+        let response = AccessResponse::new(AccessDecision::GrantExit, 5, message.to_string());
+
+        assert_eq!(response.display_message(), message);
+        assert!(response.display_message().len() < 40);
+    }
+
+    #[test]
+    fn test_access_response_grant_both_helper() {
+        let response = AccessResponse::grant_both("Acesso liberado".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::GrantBoth);
+        assert_eq!(response.timeout_seconds(), 5);
+        assert_eq!(response.display_message(), "Acesso liberado");
+    }
+
+    #[test]
+    fn test_access_response_grant_entry_helper() {
+        let response = AccessResponse::grant_entry("Bem-vindo".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::GrantEntry);
+        assert_eq!(response.timeout_seconds(), 5);
+        assert_eq!(response.display_message(), "Bem-vindo");
+    }
+
+    #[test]
+    fn test_access_response_grant_exit_helper() {
+        let response = AccessResponse::grant_exit("Acesso liberado".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::GrantExit);
+        assert_eq!(response.timeout_seconds(), 5);
+        assert_eq!(response.display_message(), "Acesso liberado");
+    }
+
+    #[test]
+    fn test_access_response_deny_helper() {
+        let response = AccessResponse::deny("Acesso negado".to_string());
+
+        assert_eq!(response.decision(), AccessDecision::Deny);
+        assert_eq!(response.timeout_seconds(), 0);
+        assert_eq!(response.display_message(), "Acesso negado");
+    }
+
+    #[test]
+    fn test_access_response_real_protocol_example_grant_exit() {
+        // Real protocol example from issue documentation
+        // 01+REON+00+6]5]Acesso liberado]
+        let response =
+            AccessResponse::new(AccessDecision::GrantExit, 5, "Acesso liberado".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+6");
+        assert_eq!(fields[1], "5");
+        assert_eq!(fields[2], "Acesso liberado");
+    }
+
+    #[test]
+    fn test_access_response_real_protocol_example_grant_entry() {
+        // Real protocol example from issue documentation
+        // 01+REON+00+5]3]Bem-vindo]
+        let response = AccessResponse::new(AccessDecision::GrantEntry, 3, "Bem-vindo".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+5");
+        assert_eq!(fields[1], "3");
+        assert_eq!(fields[2], "Bem-vindo");
+    }
+
+    #[test]
+    fn test_access_response_real_protocol_example_grant_both() {
+        // Real protocol example from issue documentation
+        // 01+REON+00+1]5]Acesso liberado]
+        let response =
+            AccessResponse::new(AccessDecision::GrantBoth, 5, "Acesso liberado".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+1");
+        assert_eq!(fields[1], "5");
+        assert_eq!(fields[2], "Acesso liberado");
+    }
+
+    #[test]
+    fn test_access_response_real_protocol_example_deny() {
+        // Real protocol example from issue documentation
+        // 01+REON+00+30]0]Acesso negado]
+        let response = AccessResponse::new(AccessDecision::Deny, 0, "Acesso negado".to_string());
+
+        let fields = response.to_fields();
+        assert_eq!(fields[0], "00+30");
+        assert_eq!(fields[1], "0");
+        assert_eq!(fields[2], "Acesso negado");
+    }
+
+    #[test]
+    fn test_access_response_message_truncation_with_unicode() {
+        // Test truncation with unicode characters (Portuguese text)
+        let message = "Acesso liberado para entrada no prédio principal".to_string();
+        assert!(message.len() > 40);
+
+        let response = AccessResponse::new(AccessDecision::GrantEntry, 5, message);
+
+        // Should truncate to 40 characters
+        assert_eq!(response.display_message().chars().count(), 40);
+    }
+
+    #[test]
+    fn test_access_response_empty_message() {
+        // Empty messages are allowed
+        let response = AccessResponse::new(AccessDecision::GrantBoth, 5, String::new());
+
+        assert_eq!(response.display_message(), "");
+    }
+
+    #[test]
+    fn test_access_response_clone() {
+        let response1 = AccessResponse::grant_exit("Test".to_string());
+        let response2 = response1.clone();
+
+        assert_eq!(response1.decision(), response2.decision());
+        assert_eq!(response1.timeout_seconds(), response2.timeout_seconds());
+        assert_eq!(response1.display_message(), response2.display_message());
+    }
+
+    #[test]
+    fn test_access_response_equality() {
+        let response1 = AccessResponse::new(AccessDecision::GrantExit, 5, "Test".to_string());
+        let response2 = AccessResponse::new(AccessDecision::GrantExit, 5, "Test".to_string());
+
+        assert_eq!(response1, response2);
+    }
+
+    #[test]
+    fn test_access_decision_copy() {
+        let decision1 = AccessDecision::GrantExit;
+        let decision2 = decision1;
+
+        assert_eq!(decision1, decision2);
     }
 }
