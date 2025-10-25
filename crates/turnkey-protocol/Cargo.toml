@@ -22,3 +22,8 @@ criterion = { version = "0.7.0", features = ["html_reports"] }
 name = "codec_bench"
 harness = false
 path = "../../benches/codec_bench.rs"
+
+[[bench]]
+name = "validation_bench"
+harness = false
+path = "../../benches/validation_bench.rs"
