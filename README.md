@@ -83,7 +83,39 @@ sudo pacman -S --needed \
     pcsc-tools
 ```
 
-#### 2. Clone and Build
+#### 2. Install Fast Linker (Optional but Recommended)
+
+For **20-40% faster build times**, install LLD or mold linker:
+
+**Arch Linux:**
+```bash
+sudo pacman -S lld clang
+```
+
+**Debian/Ubuntu:**
+```bash
+sudo apt install lld clang
+```
+
+**Fedora/RHEL:**
+```bash
+sudo dnf install lld clang
+```
+
+After installation, the project is pre-configured to use LLD automatically. See `.cargo/config.toml` for details.
+
+**Alternative - mold linker (even faster for large projects):**
+```bash
+# Arch Linux
+sudo pacman -S mold
+
+# Ubuntu 22.04+
+sudo apt install mold
+```
+
+To activate mold instead of LLD, edit `.cargo/config.toml` and uncomment the mold configuration section.
+
+#### 3. Clone and Build
 ```bash
 git clone https://github.com//marmota-alpina/turnkey.git
 cd turnkey
@@ -96,7 +128,7 @@ make build
 cargo build --release
 ```
 
-#### 3. Setup Hardware Permissions
+#### 4. Setup Hardware Permissions
 ```bash
 # Enable PCSC daemon for card readers
 sudo systemctl enable pcscd
@@ -107,14 +139,14 @@ sudo make setup-hardware
 # Then logout/login or reboot
 ```
 
-#### 4. Initialize Database
+#### 5. Initialize Database
 ```bash
 # Create database and run migrations
 make db-create
 make db-migrate
 ```
 
-#### 5. Run the Emulator
+#### 6. Run the Emulator
 ```bash
 # Start server (mock mode - no hardware required)
 cargo run --bin henry-cli -- server --mock
@@ -360,6 +392,121 @@ async fn test_access_request() {
 Benchmarks:
 ```bash
 make bench
+```
+
+## Developer Commands
+
+### Build Performance
+
+```bash
+# Build with timing to measure performance
+time cargo build --release
+
+# Build entire workspace
+cargo build --workspace --release
+
+# Check compilation without building
+cargo check --workspace
+```
+
+### Code Quality
+
+```bash
+# Format all code
+cargo fmt --all
+
+# Lint with clippy (strict mode)
+cargo clippy --all-targets --workspace -- -D warnings
+
+# Run all tests
+cargo test --all
+
+# Run tests with output
+cargo test --all -- --nocapture
+
+# Run specific test
+cargo test test_access_request -- --nocapture
+```
+
+### Benchmarking
+
+```bash
+# Run all benchmarks
+cargo bench
+
+# Run specific benchmark suite
+cargo bench --bench validation_bench
+
+# Run benchmarks with baseline comparison
+cargo bench --bench validation_bench -- --save-baseline before-optimization
+# ... make changes ...
+cargo bench --bench validation_bench -- --baseline before-optimization
+
+# Detailed benchmark output
+cargo bench --bench validation_bench -- --verbose
+```
+
+### Build Analysis
+
+```bash
+# Generate build timing report
+cargo build --timings
+
+# Check binary size
+ls -lh target/release/turnkey-cli
+
+# Analyze dependencies
+cargo tree
+cargo tree --duplicates
+
+# Check for outdated dependencies
+cargo outdated
+```
+
+### Database Operations
+
+```bash
+# Create database
+make db-create
+
+# Run migrations
+make db-migrate
+
+# Reset database (CAUTION: deletes all data)
+make db-reset
+
+# Backup database
+cp data/turnkey.db data/turnkey.db.backup
+```
+
+### Monitoring & Debugging
+
+```bash
+# Run with detailed logs
+RUST_LOG=debug cargo run --bin turnkey-cli
+
+# Run with trace-level logs
+RUST_LOG=trace cargo run --bin turnkey-cli
+
+# Profile with flamegraph (requires cargo-flamegraph)
+cargo flamegraph --bin turnkey-cli
+
+# Check for memory leaks with valgrind
+valgrind --leak-check=full target/release/turnkey-cli
+```
+
+### Cross-Compilation
+
+```bash
+# Build for Raspberry Pi (ARM64)
+make build-arm
+
+# Build for Raspberry Pi (32-bit)
+make build-rpi
+
+# Or with cargo directly
+cargo build --target aarch64-unknown-linux-gnu
+cargo build --target armv7-unknown-linux-gnueabihf
 ```
 
 ## Contributing

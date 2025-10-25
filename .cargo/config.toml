@@ -1,3 +1,8 @@
+# Cargo configuration for Turnkey Access Control Emulator
+#
+# This file configures build optimizations for maximum performance
+# while maintaining compatibility across different development environments.
+
 [build]
 incremental = true
 
@@ -5,5 +10,49 @@ incremental = true
 verbose = false
 color = "auto"
 
+# ============================================================================
+# Linker Configuration (Linux x86_64)
+# ============================================================================
+#
+# PERFORMANCE BOOST: Using a fast linker (LLD or mold) can reduce build times
+# by 20-40% compared to the default GNU ld linker.
+#
+# Installation Instructions:
+#
+# Option 1 - LLD (LLVM Linker, recommended):
+#   Arch Linux:   sudo pacman -S lld clang
+#   Ubuntu/Debian: sudo apt install lld clang
+#   Fedora:       sudo dnf install lld clang
+#
+# Option 2 - mold (Alternative fast linker):
+#   Arch Linux:   sudo pacman -S mold
+#   Ubuntu/Debian: sudo apt install mold
+#   Fedora:       sudo dnf install mold
+#
+# After installation, uncomment the appropriate section below.
+# ============================================================================
+
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=native"]
+# LLD Linker ENABLED - Provides 20-40% faster link times with LLVM integration
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld", "-C", "target-cpu=native"]
+
+# Previous configuration (without LLD):
+# rustflags = ["-C", "target-cpu=native"]
+
+# Option 2: mold Linker (alternative, very fast)
+# Can be even faster than LLD for large projects
+# linker = "/usr/bin/clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold", "-C", "target-cpu=native"]
+
+# ============================================================================
+# Cross-compilation targets (ARM for Raspberry Pi)
+# ============================================================================
+
+# Raspberry Pi 4 (64-bit ARM)
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+# Raspberry Pi (32-bit ARM)
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"

@@ -25,7 +25,8 @@ repository = "https://github.com/marmota-alpina/turnkey"
 [workspace.dependencies]
 # Async
 tokio = { version = "1.48", features = ["full"] }
-async-trait = "0.1"
+# Note: async-trait is NOT needed in Edition 2024
+# Native async trait support is available via RPITIT (Return Position Impl Trait In Traits)
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
