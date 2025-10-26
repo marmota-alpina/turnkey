@@ -17,6 +17,7 @@ rstest = "0.26"
 tokio = { workspace = true, features = ["test-util", "macros"] }
 futures = "0.3"
 criterion = { version = "0.7.0", features = ["html_reports"] }
+proptest = "1.4"
 
 [[bench]]
 name = "codec_bench"
@@ -27,3 +28,8 @@ path = "../../benches/codec_bench.rs"
 name = "validation_bench"
 harness = false
 path = "../../benches/validation_bench.rs"
+
+[[bench]]
+name = "protocol_message_bench"
+harness = false
+path = "../../benches/protocol_message_bench.rs"
