@@ -136,13 +136,13 @@ impl KeypadInput {
 /// Represents a numeric keypad that can receive user input. The keypad may
 /// support additional features like backlight control and audio feedback.
 ///
-/// # Object Safety
+/// # Object Safety and Dynamic Dispatch
 ///
-/// **NOTE**: This trait is NOT object-safe due to the use of native `async fn`
-/// methods (Rust Edition 2024 RPITIT). You cannot use `Box<dyn KeypadDevice>`
-/// or `&dyn KeypadDevice`.
+/// **NOTE**: This trait is NOT object-safe because `async fn` methods return
+/// `impl Future`, which is an opaque type that cannot be used in trait objects
+/// (Edition 2024 RPITIT). You cannot use `Box<dyn KeypadDevice>` or `&dyn KeypadDevice`.
 ///
-/// Instead, use generic type parameters:
+/// For most use cases, use generic type parameters:
 ///
 /// ```no_run
 /// use turnkey_hardware::traits::KeypadDevice;
@@ -154,8 +154,30 @@ impl KeypadInput {
 /// }
 /// ```
 ///
-/// If you need dynamic dispatch, consider using an enum wrapper or see the
-/// crate-level documentation for alternative patterns.
+/// For dynamic dispatch (e.g., in the `PeripheralManager`), use the enum wrapper
+/// pattern from the [`devices`](crate::devices) module:
+///
+/// ```no_run
+/// use turnkey_hardware::devices::AnyKeypadDevice;
+/// use turnkey_hardware::traits::KeypadDevice;
+/// use turnkey_hardware::mock::MockKeypad;
+///
+/// # async fn example() -> turnkey_hardware::Result<()> {
+/// let (keypad, _handle) = MockKeypad::new();
+/// let mut any_keypad = AnyKeypadDevice::Mock(keypad);
+///
+/// // Use through trait interface with zero-cost abstraction
+/// let input = any_keypad.read_input().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// This approach provides:
+/// - Zero-cost abstraction (compile-time monomorphization)
+/// - Type-safe extensibility
+/// - Support for feature flags (conditional compilation)
+///
+/// See `docs/enum-dispatch-pattern-async-traits.md` for detailed explanation.
 ///
 /// # Examples
 ///
@@ -318,20 +340,34 @@ impl CardData {
     /// let card = CardData::new(uid, CardType::MifareClassic1K).unwrap();
     /// ```
     pub fn new(uid: Vec<u8>, card_type: CardType) -> Result<Self> {
-        if uid.len() < MIN_UID_LENGTH || uid.len() > MAX_UID_LENGTH {
-            return Err(crate::error::HardwareError::invalid_data(format!(
-                "UID length must be {}-{} bytes, got {} bytes",
-                MIN_UID_LENGTH,
-                MAX_UID_LENGTH,
-                uid.len()
-            )));
-        }
+        CardDataBuilder::new(uid, card_type).build()
+    }
 
-        Ok(Self {
-            uid,
-            card_type,
-            timestamp: chrono::Utc::now(),
-        })
+    /// Create a builder for constructing card data with optional fields.
+    ///
+    /// This allows setting custom timestamps for testing or replaying
+    /// historical events.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_hardware::traits::{CardData, CardType};
+    /// use chrono::{Utc, TimeZone};
+    ///
+    /// // With custom timestamp
+    /// let historical_time = Utc.with_ymd_and_hms(2025, 1, 15, 12, 30, 0).unwrap();
+    /// let card = CardData::builder(vec![0x01, 0x02, 0x03, 0x04], CardType::MifareClassic1K)
+    ///     .timestamp(historical_time)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Without custom timestamp (uses current time)
+    /// let card2 = CardData::builder(vec![0x05, 0x06, 0x07, 0x08], CardType::MifareClassic1K)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn builder(uid: Vec<u8>, card_type: CardType) -> CardDataBuilder {
+        CardDataBuilder::new(uid, card_type)
     }
 
     /// Create new card data without validation (for internal use).
@@ -389,19 +425,117 @@ impl CardData {
     }
 }
 
+/// Builder for constructing CardData with optional fields.
+///
+/// This builder provides a flexible way to construct CardData instances
+/// with custom timestamps or default values, following the Builder pattern
+/// for better ergonomics and maintainability.
+///
+/// # Examples
+///
+/// ```
+/// use turnkey_hardware::traits::{CardData, CardType};
+/// use chrono::Utc;
+///
+/// // Using default timestamp (now)
+/// let card = CardData::builder(vec![0x01, 0x02, 0x03, 0x04], CardType::MifareClassic1K)
+///     .build()
+///     .unwrap();
+///
+/// // Using custom timestamp
+/// let timestamp = Utc::now();
+/// let card = CardData::builder(vec![0x01, 0x02, 0x03, 0x04], CardType::MifareClassic1K)
+///     .timestamp(timestamp)
+///     .build()
+///     .unwrap();
+/// ```
+#[derive(Debug, Clone)]
+pub struct CardDataBuilder {
+    uid: Vec<u8>,
+    card_type: CardType,
+    timestamp: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl CardDataBuilder {
+    /// Create a new CardDataBuilder with required fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `uid` - The card's unique identifier bytes
+    /// * `card_type` - The type of card detected
+    pub fn new(uid: Vec<u8>, card_type: CardType) -> Self {
+        Self {
+            uid,
+            card_type,
+            timestamp: None,
+        }
+    }
+
+    /// Set a custom timestamp for the card read event.
+    ///
+    /// If not set, the current time will be used when build() is called.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - Custom timestamp for the card read event
+    pub fn timestamp(mut self, timestamp: chrono::DateTime<chrono::Utc>) -> Self {
+        self.timestamp = Some(timestamp);
+        self
+    }
+
+    /// Build the CardData instance with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - UID length is not between MIN_UID_LENGTH and MAX_UID_LENGTH
+    /// - UID is empty
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_hardware::traits::{CardData, CardType};
+    ///
+    /// let card = CardData::builder(vec![0x01, 0x02, 0x03, 0x04], CardType::MifareClassic1K)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn build(self) -> Result<CardData> {
+        let uid_len = self.uid.len();
+        if !(MIN_UID_LENGTH..=MAX_UID_LENGTH).contains(&uid_len) {
+            return Err(crate::HardwareError::invalid_data(format!(
+                "Card UID length must be between {} and {} bytes, got {}",
+                MIN_UID_LENGTH, MAX_UID_LENGTH, uid_len
+            )));
+        }
+
+        if self.uid.is_empty() {
+            return Err(crate::HardwareError::invalid_data(
+                "Card UID cannot be empty",
+            ));
+        }
+
+        Ok(CardData {
+            uid: self.uid,
+            card_type: self.card_type,
+            timestamp: self.timestamp.unwrap_or_else(chrono::Utc::now),
+        })
+    }
+}
+
 /// RFID reader device abstraction.
 ///
 /// Represents an RFID/NFC card reader that can detect and read cards.
 /// The reader may support LED control for visual feedback.
 ///
-/// # Object Safety
+/// # Object Safety and Dynamic Dispatch
 ///
-/// **NOTE**: This trait is NOT object-safe due to the use of native `async fn`
-/// methods (Rust Edition 2024 RPITIT). You cannot use `Box<dyn RfidDevice>`
-/// or `&dyn RfidDevice`.
+/// **NOTE**: This trait is NOT object-safe because `async fn` methods return
+/// `impl Future`, which is an opaque type that cannot be used in trait objects
+/// (Edition 2024 RPITIT). You cannot use `Box<dyn RfidDevice>` or `&dyn RfidDevice`.
 ///
-/// Instead, use generic type parameters. See [`KeypadDevice`] for examples
-/// of dynamic dispatch patterns if needed.
+/// For generic type parameters, see [`KeypadDevice`] documentation.
+/// For dynamic dispatch, use [`AnyRfidDevice`](crate::devices::AnyRfidDevice).
 ///
 /// # Examples
 ///
@@ -475,6 +609,11 @@ pub trait RfidDevice: Send + Sync {
 /// Values 0-49 are considered poor quality, 50-100 are acceptable.
 pub const DEFAULT_QUALITY_THRESHOLD: u8 = 50;
 
+/// Maximum biometric quality score.
+///
+/// Quality scores range from 0 (lowest) to 100 (highest).
+pub const MAX_QUALITY_SCORE: u8 = 100;
+
 /// Biometric template data.
 ///
 /// Contains a fingerprint template captured by a biometric scanner.
@@ -501,12 +640,49 @@ pub struct BiometricData {
 
 impl BiometricData {
     /// Create new biometric data with the current timestamp.
-    pub fn new(template: Vec<u8>, quality: u8) -> Self {
-        Self {
-            template,
-            quality,
-            timestamp: chrono::Utc::now(),
-        }
+    ///
+    /// This is a convenience method that delegates to the builder pattern.
+    /// For more control over construction, use `BiometricData::builder()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quality score is greater than 100.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_hardware::traits::BiometricData;
+    ///
+    /// let data = BiometricData::new(vec![0u8; 512], 75).unwrap();
+    /// assert_eq!(data.quality, 75);
+    ///
+    /// // Invalid quality
+    /// assert!(BiometricData::new(vec![0u8; 512], 101).is_err());
+    /// ```
+    pub fn new(template: Vec<u8>, quality: u8) -> Result<Self> {
+        BiometricDataBuilder::new(template, quality).build()
+    }
+
+    /// Create a builder for constructing BiometricData with optional fields.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_hardware::traits::BiometricData;
+    /// use chrono::Utc;
+    ///
+    /// // Using default timestamp (now)
+    /// let data = BiometricData::builder(vec![0u8; 512], 75).build().unwrap();
+    ///
+    /// // Using custom timestamp
+    /// let timestamp = Utc::now();
+    /// let data = BiometricData::builder(vec![0u8; 512], 75)
+    ///     .timestamp(timestamp)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn builder(template: Vec<u8>, quality: u8) -> BiometricDataBuilder {
+        BiometricDataBuilder::new(template, quality)
     }
 
     /// Check if the capture quality meets or exceeds the default threshold.
@@ -520,12 +696,12 @@ impl BiometricData {
     /// ```
     /// use turnkey_hardware::traits::BiometricData;
     ///
-    /// let data = BiometricData::new(vec![0u8; 512], 60);
+    /// let data = BiometricData::new(vec![0u8; 512], 60).unwrap();
     /// assert!(data.is_quality_acceptable());
     ///
     /// // Custom threshold
     /// const STRICT_THRESHOLD: u8 = 70;
-    /// let high_quality = BiometricData::new(vec![0u8; 512], 75);
+    /// let high_quality = BiometricData::new(vec![0u8; 512], 75).unwrap();
     /// assert!(high_quality.quality >= STRICT_THRESHOLD);
     /// ```
     pub fn is_quality_acceptable(&self) -> bool {
@@ -539,12 +715,110 @@ impl BiometricData {
     /// ```
     /// use turnkey_hardware::traits::BiometricData;
     ///
-    /// let data = BiometricData::new(vec![0u8; 512], 65);
+    /// let data = BiometricData::new(vec![0u8; 512], 65).unwrap();
     /// assert!(data.is_quality_acceptable_with_threshold(60));
     /// assert!(!data.is_quality_acceptable_with_threshold(70));
     /// ```
     pub fn is_quality_acceptable_with_threshold(&self, threshold: u8) -> bool {
         self.quality >= threshold
+    }
+}
+
+/// Builder for constructing BiometricData with optional fields.
+///
+/// This builder provides a flexible way to construct BiometricData instances
+/// with custom timestamps or default values, following the Builder pattern
+/// for better ergonomics and maintainability.
+///
+/// # Examples
+///
+/// ```
+/// use turnkey_hardware::traits::BiometricData;
+/// use chrono::Utc;
+///
+/// // Using default timestamp (now)
+/// let data = BiometricData::builder(vec![0u8; 512], 75).build();
+///
+/// // Using custom timestamp
+/// let timestamp = Utc::now();
+/// let data = BiometricData::builder(vec![0u8; 512], 75)
+///     .timestamp(timestamp)
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct BiometricDataBuilder {
+    template: Vec<u8>,
+    quality: u8,
+    timestamp: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl BiometricDataBuilder {
+    /// Create a new BiometricDataBuilder with required fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `template` - The fingerprint template data
+    /// * `quality` - The quality score (0-100)
+    pub fn new(template: Vec<u8>, quality: u8) -> Self {
+        Self {
+            template,
+            quality,
+            timestamp: None,
+        }
+    }
+
+    /// Set a custom timestamp for the biometric capture event.
+    ///
+    /// If not set, the current time will be used when build() is called.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - Custom timestamp for the capture event
+    pub fn timestamp(mut self, timestamp: chrono::DateTime<chrono::Utc>) -> Self {
+        self.timestamp = Some(timestamp);
+        self
+    }
+
+    /// Build the BiometricData instance with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quality score is greater than 100.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_hardware::traits::BiometricData;
+    ///
+    /// let data = BiometricData::builder(vec![0u8; 512], 75).build().unwrap();
+    /// assert_eq!(data.quality, 75);
+    /// assert_eq!(data.template.len(), 512);
+    ///
+    /// // Invalid quality
+    /// let result = BiometricData::builder(vec![0u8; 512], 101).build();
+    /// assert!(result.is_err());
+    /// ```
+    pub fn build(self) -> Result<BiometricData> {
+        Self::validate_quality(self.quality)?;
+
+        Ok(BiometricData {
+            template: self.template,
+            quality: self.quality,
+            timestamp: self.timestamp.unwrap_or_else(chrono::Utc::now),
+        })
+    }
+
+    /// Validate that quality score is within valid range (0-100).
+    ///
+    /// Returns an error if quality exceeds MAX_QUALITY_SCORE.
+    fn validate_quality(quality: u8) -> Result<()> {
+        if quality > MAX_QUALITY_SCORE {
+            return Err(crate::HardwareError::invalid_data(format!(
+                "Biometric quality must be 0-{}, got {}",
+                MAX_QUALITY_SCORE, quality
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -554,14 +828,14 @@ impl BiometricData {
 /// verify them against stored templates. The device may support LED
 /// control for visual feedback.
 ///
-/// # Object Safety
+/// # Object Safety and Dynamic Dispatch
 ///
-/// **NOTE**: This trait is NOT object-safe due to the use of native `async fn`
-/// methods (Rust Edition 2024 RPITIT). You cannot use `Box<dyn BiometricDevice>`
-/// or `&dyn BiometricDevice`.
+/// **NOTE**: This trait is NOT object-safe because `async fn` methods return
+/// `impl Future`, which is an opaque type that cannot be used in trait objects
+/// (Edition 2024 RPITIT). You cannot use `Box<dyn BiometricDevice>` or `&dyn BiometricDevice`.
 ///
-/// Instead, use generic type parameters. See [`KeypadDevice`] for examples
-/// of dynamic dispatch patterns if needed.
+/// For generic type parameters, see [`KeypadDevice`] documentation.
+/// For dynamic dispatch, use [`AnyBiometricDevice`](crate::devices::AnyBiometricDevice).
 ///
 /// # Examples
 ///
@@ -721,13 +995,13 @@ mod tests {
 
     #[test]
     fn test_biometric_data_quality() {
-        let data = BiometricData::new(vec![0u8; 512], 60);
+        let data = BiometricData::new(vec![0u8; 512], 60).unwrap();
         assert!(data.is_quality_acceptable());
         assert!(data.is_quality_acceptable_with_threshold(50));
         assert!(data.is_quality_acceptable_with_threshold(60));
         assert!(!data.is_quality_acceptable_with_threshold(61));
 
-        let low_quality = BiometricData::new(vec![0u8; 512], 30);
+        let low_quality = BiometricData::new(vec![0u8; 512], 30).unwrap();
         assert!(!low_quality.is_quality_acceptable());
         assert!(!low_quality.is_quality_acceptable_with_threshold(50));
         assert!(low_quality.is_quality_acceptable_with_threshold(30));
@@ -736,7 +1010,7 @@ mod tests {
     #[test]
     fn test_biometric_data_template_access() {
         let template_data = vec![1u8, 2, 3, 4, 5];
-        let data = BiometricData::new(template_data.clone(), 70);
+        let data = BiometricData::new(template_data.clone(), 70).unwrap();
 
         // Direct field access (development emulator - no hiding needed)
         assert_eq!(data.template, template_data);
@@ -744,13 +1018,37 @@ mod tests {
 
     #[test]
     fn test_biometric_data_debug() {
-        let data = BiometricData::new(vec![0xDE, 0xAD, 0xBE, 0xEF], 75);
+        let data = BiometricData::new(vec![0xDE, 0xAD, 0xBE, 0xEF], 75).unwrap();
         let debug_output = format!("{:?}", data);
 
         // Development emulator - Debug shows all data
         assert!(debug_output.contains("quality"));
         assert!(debug_output.contains("75"));
         assert!(debug_output.contains("template"));
+    }
+
+    #[test]
+    fn test_biometric_data_quality_validation() {
+        // Valid quality values (0-100)
+        assert!(BiometricData::new(vec![0u8; 512], 0).is_ok());
+        assert!(BiometricData::new(vec![0u8; 512], 50).is_ok());
+        assert!(BiometricData::new(vec![0u8; 512], 100).is_ok());
+
+        // Invalid quality values (>100)
+        assert!(BiometricData::new(vec![0u8; 512], 101).is_err());
+        assert!(BiometricData::new(vec![0u8; 512], 200).is_err());
+        assert!(BiometricData::new(vec![0u8; 512], 255).is_err());
+    }
+
+    #[test]
+    fn test_biometric_builder_quality_validation() {
+        // Valid quality via builder
+        let result = BiometricData::builder(vec![0u8; 512], 75).build();
+        assert!(result.is_ok());
+
+        // Invalid quality via builder
+        let result = BiometricData::builder(vec![0u8; 512], 150).build();
+        assert!(result.is_err());
     }
 
     // Note: async fn in traits (Edition 2024 RPITIT) are not object-safe by default.
