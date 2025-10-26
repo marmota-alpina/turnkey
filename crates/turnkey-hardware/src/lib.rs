@@ -106,7 +106,10 @@
 //! [`RfidDevice`]: traits::RfidDevice
 //! [`BiometricDevice`]: traits::BiometricDevice
 
+pub mod devices;
 pub mod error;
+pub mod manager;
+pub mod mock;
 pub mod traits;
 pub mod types;
 
@@ -114,6 +117,12 @@ pub mod types;
 pub use error::{HardwareError, Result};
 pub use traits::{
     BiometricData, BiometricDevice, CardData, CardType, DEFAULT_QUALITY_THRESHOLD, KeypadDevice,
-    KeypadInput, MAX_UID_LENGTH, MIN_UID_LENGTH, RfidDevice,
+    KeypadInput, MAX_QUALITY_SCORE, MAX_UID_LENGTH, MIN_UID_LENGTH, RfidDevice,
 };
 pub use types::{DeviceInfo, LedColor, ReaderInfo};
+
+// Re-export manager types
+pub use manager::{
+    DeviceType, PeripheralConfig, PeripheralEvent, PeripheralHandle, PeripheralManager,
+    PeripheralStats,
+};
