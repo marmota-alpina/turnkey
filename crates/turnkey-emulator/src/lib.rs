@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Turnkey emulator crate providing device emulation functionality.
+//!
+//! This crate contains the state machine and logic for emulating
+//! physical access control devices like turnstiles.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod state_machine;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use state_machine::{StateMachine, StateMachineBuilder, StateTransition, TurnstileState};
