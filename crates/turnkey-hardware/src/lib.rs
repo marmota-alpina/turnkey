@@ -86,7 +86,7 @@
 //! # Error Handling
 //!
 //! All operations return [`Result<T>`][error::Result] which uses the
-//! [`HardwareError`][error::HardwareError] error type. This provides detailed
+//! [`HardwareError`] error type. This provides detailed
 //! context about hardware failures including disconnections, timeouts, and
 //! protocol errors.
 //!
