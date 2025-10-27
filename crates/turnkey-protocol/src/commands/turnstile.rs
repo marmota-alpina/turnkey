@@ -99,6 +99,7 @@ use turnkey_core::{AccessDirection, HenryTimestamp, ReaderType, Result};
 /// assert!(!state.is_idle());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TurnstileState {
     /// Turnstile is idle, waiting for user input.
     Idle,
@@ -214,6 +215,46 @@ impl TurnstileState {
             Self::RotationTimeout => Some("000+82"),
             _ => None,
         }
+    }
+
+    /// Alias for `command_code()` for compatibility with emulator code.
+    ///
+    /// This method provides the same functionality as `command_code()` but with
+    /// a name that better reflects its purpose in the emulator context.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::turnstile::TurnstileState;
+    ///
+    /// assert_eq!(
+    ///     TurnstileState::WaitingRotation.protocol_command_code(),
+    ///     Some("000+80")
+    /// );
+    /// ```
+    #[inline]
+    pub fn protocol_command_code(self) -> Option<&'static str> {
+        self.command_code()
+    }
+
+    /// Check if this state emits a protocol message when entered.
+    ///
+    /// Returns `true` for states that send protocol messages to the server:
+    /// - `WaitingRotation` (000+80)
+    /// - `RotationCompleted` (000+81)
+    /// - `RotationTimeout` (000+82)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_protocol::commands::turnstile::TurnstileState;
+    ///
+    /// assert!(TurnstileState::WaitingRotation.emits_protocol_message());
+    /// assert!(!TurnstileState::Idle.emits_protocol_message());
+    /// ```
+    #[inline]
+    pub fn emits_protocol_message(self) -> bool {
+        self.command_code().is_some()
     }
 
     /// Check if transition to another state is valid.

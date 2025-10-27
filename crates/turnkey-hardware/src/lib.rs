@@ -113,15 +113,36 @@ pub mod mock;
 pub mod traits;
 pub mod types;
 
-// Re-export commonly used types for convenience
+// ===== Primary API Surface =====
+//
+// The types below are re-exported at the crate root for convenient access.
+// Users can import them directly without navigating into submodules:
+//
+// use turnkey_hardware::{KeypadDevice, RfidDevice, BiometricDevice};
+// use turnkey_hardware::{HardwareError, Result};
+// use turnkey_hardware::PeripheralManager;
+
+/// Error handling types for hardware operations.
 pub use error::{HardwareError, Result};
+
+/// Main device trait definitions and associated types.
+///
+/// These are the primary traits that hardware implementers should use:
+/// - [`KeypadDevice`] - Numeric keypad input devices
+/// - [`RfidDevice`] - RFID/NFC card readers
+/// - [`BiometricDevice`] - Fingerprint scanners
 pub use traits::{
     BiometricData, BiometricDevice, CardData, CardType, DEFAULT_QUALITY_THRESHOLD, KeypadDevice,
     KeypadInput, MAX_QUALITY_SCORE, MAX_UID_LENGTH, MIN_UID_LENGTH, RfidDevice,
 };
+
+/// Common hardware types (LED colors, device info, reader info).
 pub use types::{DeviceInfo, LedColor, ReaderInfo};
 
-// Re-export manager types
+/// Peripheral management system for coordinating multiple devices.
+///
+/// The [`PeripheralManager`] provides centralized device lifecycle management,
+/// event handling, and statistics tracking for all connected peripherals.
 pub use manager::{
     DeviceType, PeripheralConfig, PeripheralEvent, PeripheralHandle, PeripheralManager,
     PeripheralStats,

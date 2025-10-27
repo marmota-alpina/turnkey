@@ -67,25 +67,6 @@
 
 use turnkey_core::{Error, Result, constants::*};
 
-/// Maximum allowed length for any protocol field (DoS protection).
-///
-/// This limit is set to 256 bytes for the following reasons:
-///
-/// 1. **Protocol Safety**: The largest valid field is the display message at 40
-///    characters, plus timestamp at 19 characters, plus card number at 20 characters.
-///    256 bytes provides generous headroom (approximately 3x typical maximum).
-///
-/// 2. **DoS Protection**: Prevents memory exhaustion from malicious oversized fields.
-///    At 256 bytes per field × 10 fields maximum = 2.5KB per message, even 10,000
-///    concurrent connections would only consume approximately 25MB of memory.
-///
-/// 3. **Performance**: 256-byte comparison is cache-friendly on modern CPUs
-///    (fits within L1 cache line which is typically 64-256 bytes).
-///
-/// NOTE: This is an implementation-specific limit, not a protocol specification limit.
-/// The Henry protocol does not define maximum field lengths explicitly.
-const MAX_FIELD_LENGTH: usize = 256;
-
 /// Validate field value for protocol safety
 ///
 /// Ensures field does not contain reserved protocol delimiters that could
