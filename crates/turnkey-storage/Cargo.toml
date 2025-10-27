@@ -4,3 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "chrono", "macros", "migrate"] }
+turnkey-core = { path = "../turnkey-core" }
+turnkey-protocol = { path = "../turnkey-protocol" }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+subtle = "2.6"
+
+[dev-dependencies]
+rstest = "0.26"
+tempfile = "3.14"
+futures = "0.3"
