@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 turnkey-core = { path = "../turnkey-core" }
+turnkey-protocol = { path = "../turnkey-protocol" }
 thiserror = "2.0"
 tokio = { version = "1.43", features = ["time", "sync"] }
 serde = { version = "1.0", features = ["derive"] }

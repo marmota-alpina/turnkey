@@ -61,12 +61,12 @@
 //! ```
 
 use std::collections::VecDeque;
-use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
 use turnkey_core::{Error, Result};
+use turnkey_protocol::commands::turnstile::TurnstileState;
 
 /// Maximum number of state transitions to keep in history.
 ///
@@ -80,190 +80,21 @@ use turnkey_core::{Error, Result};
 /// this value based on operational requirements and available memory.
 const MAX_HISTORY_SIZE: usize = 100;
 
-/// Represents all possible states in the turnstile access control flow.
-///
-/// Each state corresponds to a specific phase in the access control process,
-/// from initial credential presentation through physical turnstile rotation.
-///
-/// # Protocol Mapping
-///
-/// Some states map directly to Henry protocol command codes:
-/// - `WaitingRotation` emits `000+80` when entered
-/// - `RotationCompleted` emits `000+81` when entered
-/// - `RotationTimeout` emits `000+82` when entered
-///
-/// Use [`protocol_command_code`](TurnstileState::protocol_command_code) to get
-/// the protocol code for states that emit messages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnstileState {
-    /// Waiting for user input or credential presentation.
-    Idle,
-
-    /// Reading credential from peripheral device (RFID, keypad, biometric).
-    Reading,
-
-    /// Validating credential with server or local database.
-    Validating,
-
-    /// Access granted, displaying confirmation message to user.
-    Granted,
-
-    /// Access denied, displaying rejection message to user.
-    Denied,
-
-    /// Waiting for user to physically pass through the turnstile.
-    ///
-    /// Protocol: Emits `000+80` (waiting for rotation) when entering this state.
-    WaitingRotation,
-
-    /// Physical rotation of turnstile in progress.
-    RotationInProgress,
-
-    /// User successfully passed through, rotation completed.
-    ///
-    /// Protocol: Emits `000+81` (rotation completed) when entering this state.
-    RotationCompleted,
-
-    /// User did not pass through within allowed timeout period.
-    ///
-    /// Protocol: Emits `000+82` (rotation abandoned/timeout) when entering this state.
-    RotationTimeout,
-}
-
-impl fmt::Display for TurnstileState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let state_str = match self {
-            TurnstileState::Idle => "Idle",
-            TurnstileState::Reading => "Reading",
-            TurnstileState::Validating => "Validating",
-            TurnstileState::Granted => "Granted",
-            TurnstileState::Denied => "Denied",
-            TurnstileState::WaitingRotation => "WaitingRotation",
-            TurnstileState::RotationInProgress => "RotationInProgress",
-            TurnstileState::RotationCompleted => "RotationCompleted",
-            TurnstileState::RotationTimeout => "RotationTimeout",
-        };
-        write!(f, "{}", state_str)
-    }
-}
-
-impl TurnstileState {
-    /// Check if transition to target state is valid from this state.
-    ///
-    /// This method implements the state machine transition rules, ensuring
-    /// only valid state flows are allowed. Invalid transitions will cause
-    /// errors when attempted via [`StateMachine::transition_to`].
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - The target state to transition to
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the transition is valid, `false` otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use turnkey_emulator::TurnstileState;
-    ///
-    /// assert!(TurnstileState::Idle.can_transition_to(&TurnstileState::Reading));
-    /// assert!(!TurnstileState::Idle.can_transition_to(&TurnstileState::Granted));
-    /// ```
-    pub fn can_transition_to(&self, target: &TurnstileState) -> bool {
-        matches!(
-            (self, target),
-            // From Idle
-            (TurnstileState::Idle, TurnstileState::Reading)
-            // From Reading
-            | (TurnstileState::Reading, TurnstileState::Validating)
-            // From Validating
-            | (TurnstileState::Validating, TurnstileState::Granted | TurnstileState::Denied)
-            // From Granted
-            | (TurnstileState::Granted, TurnstileState::WaitingRotation)
-            // From Denied
-            | (TurnstileState::Denied, TurnstileState::Idle)
-            // From WaitingRotation
-            | (TurnstileState::WaitingRotation, TurnstileState::RotationInProgress | TurnstileState::RotationTimeout)
-            // From RotationInProgress
-            | (TurnstileState::RotationInProgress, TurnstileState::RotationCompleted)
-            // From RotationCompleted
-            | (TurnstileState::RotationCompleted, TurnstileState::Idle)
-            // From RotationTimeout
-            | (TurnstileState::RotationTimeout, TurnstileState::Idle)
-        )
-    }
-
-    /// Get the Henry protocol command code for this state, if applicable.
-    ///
-    /// Returns the protocol command code that should be emitted when
-    /// entering this state, according to Henry protocol section 2.1-2.2.
-    ///
-    /// # Protocol Mapping
-    ///
-    /// - `WaitingRotation` → `000+80` (waiting for rotation)
-    /// - `RotationCompleted` → `000+81` (rotation completed)
-    /// - `RotationTimeout` → `000+82` (rotation abandoned/timeout)
-    ///
-    /// # Returns
-    ///
-    /// Returns `Some(command_code)` for states that emit protocol messages,
-    /// `None` for internal states that do not emit messages.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use turnkey_emulator::TurnstileState;
-    ///
-    /// assert_eq!(
-    ///     TurnstileState::WaitingRotation.protocol_command_code(),
-    ///     Some("000+80")
-    /// );
-    /// assert_eq!(
-    ///     TurnstileState::RotationCompleted.protocol_command_code(),
-    ///     Some("000+81")
-    /// );
-    /// assert_eq!(TurnstileState::Idle.protocol_command_code(), None);
-    /// ```
-    pub fn protocol_command_code(&self) -> Option<&'static str> {
-        match self {
-            TurnstileState::WaitingRotation => Some("000+80"),
-            TurnstileState::RotationCompleted => Some("000+81"),
-            TurnstileState::RotationTimeout => Some("000+82"),
-            _ => None,
-        }
-    }
-
-    /// Check if this state requires protocol message emission.
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if entering this state requires sending a protocol message.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use turnkey_emulator::TurnstileState;
-    ///
-    /// assert!(TurnstileState::WaitingRotation.emits_protocol_message());
-    /// assert!(!TurnstileState::Idle.emits_protocol_message());
-    /// ```
-    pub fn emits_protocol_message(&self) -> bool {
-        self.protocol_command_code().is_some()
-    }
-}
-
 /// Represents a single state transition with timestamp.
 ///
 /// This struct records when a state transition occurred, useful for
 /// audit trails, debugging, and performance analysis.
 ///
-/// # Serialization Note
+/// # Serialization
 ///
-/// The `timestamp` field is not serialized as `Instant` is process-specific.
-/// When deserializing, the timestamp will be set to the current time.
-/// For persistent storage, use wall-clock time (SystemTime) in your application layer.
+/// The `timestamp` field uses `SystemTime` (wall-clock time) which is
+/// serializable and suitable for persistent storage and audit logs.
+/// This allows state transitions to be saved to databases or files
+/// and restored with accurate timing information.
+///
+/// For relative timing calculations within a single process run,
+/// use the `elapsed()` method which internally uses `Instant` for
+/// monotonic time measurement.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateTransition {
     /// The state transitioned from.
@@ -272,12 +103,12 @@ pub struct StateTransition {
     /// The state transitioned to.
     pub to: TurnstileState,
 
-    /// When the transition occurred.
+    /// When the transition occurred (wall-clock time).
     ///
-    /// Note: This field is not serialized. Upon deserialization, it will be set to
-    /// the time of deserialization, not the original transition time.
-    #[serde(skip, default = "Instant::now")]
-    pub timestamp: Instant,
+    /// Uses `SystemTime` for serialization support and persistent storage.
+    /// This timestamp represents the real-world time when the transition
+    /// occurred and can be used for audit trails and crash recovery.
+    pub timestamp: SystemTime,
 }
 
 impl StateTransition {
@@ -290,12 +121,12 @@ impl StateTransition {
     ///
     /// # Returns
     ///
-    /// Returns a new `StateTransition` with current timestamp.
+    /// Returns a new `StateTransition` with current wall-clock timestamp.
     pub fn new(from: TurnstileState, to: TurnstileState) -> Self {
         Self {
             from,
             to,
-            timestamp: Instant::now(),
+            timestamp: SystemTime::now(),
         }
     }
 
@@ -303,9 +134,17 @@ impl StateTransition {
     ///
     /// # Returns
     ///
-    /// Returns the elapsed time since the transition.
+    /// Returns the elapsed time since the transition, or `Duration::ZERO`
+    /// if the system clock moved backwards.
+    ///
+    /// # Note
+    ///
+    /// This method handles potential clock adjustments gracefully by
+    /// returning zero duration if the system time moved backwards.
     pub fn elapsed(&self) -> Duration {
-        self.timestamp.elapsed()
+        SystemTime::now()
+            .duration_since(self.timestamp)
+            .unwrap_or(Duration::ZERO)
     }
 }
 
@@ -421,6 +260,7 @@ impl StateMachine {
     /// # Returns
     ///
     /// Returns `true` if a timeout is set and has been exceeded, `false` otherwise.
+    #[must_use = "timeout status should be checked and acted upon"]
     pub fn has_timed_out(&self) -> bool {
         self.current_timeout
             .is_some_and(|timeout| self.time_in_current_state() >= timeout)
@@ -432,6 +272,7 @@ impl StateMachine {
     ///
     /// Returns `Some(Duration)` with remaining time if timeout is set,
     /// `None` if no timeout or already timed out.
+    #[must_use = "remaining time should be used for UI updates or logging"]
     pub fn time_remaining(&self) -> Option<Duration> {
         self.current_timeout.and_then(|timeout| {
             let elapsed = self.time_in_current_state();
@@ -531,7 +372,7 @@ impl StateMachine {
     /// ```
     pub fn transition_to(&mut self, new_state: TurnstileState) -> Result<StateTransition> {
         // Validate transition before making any changes
-        if !self.current_state.can_transition_to(&new_state) {
+        if !self.current_state.can_transition_to(new_state) {
             return Err(Error::InvalidStateTransition {
                 from: self.current_state.to_string(),
                 to: new_state.to_string(),
@@ -1145,15 +986,15 @@ mod tests {
     #[test]
     fn test_can_transition_to_method() {
         // Test a few key transitions
-        assert!(TurnstileState::Idle.can_transition_to(&TurnstileState::Reading));
-        assert!(!TurnstileState::Idle.can_transition_to(&TurnstileState::Granted));
+        assert!(TurnstileState::Idle.can_transition_to(TurnstileState::Reading));
+        assert!(!TurnstileState::Idle.can_transition_to(TurnstileState::Granted));
 
-        assert!(TurnstileState::Reading.can_transition_to(&TurnstileState::Validating));
-        assert!(!TurnstileState::Reading.can_transition_to(&TurnstileState::Idle));
+        assert!(TurnstileState::Reading.can_transition_to(TurnstileState::Validating));
+        assert!(!TurnstileState::Reading.can_transition_to(TurnstileState::Idle));
 
-        assert!(TurnstileState::Validating.can_transition_to(&TurnstileState::Granted));
-        assert!(TurnstileState::Validating.can_transition_to(&TurnstileState::Denied));
-        assert!(!TurnstileState::Validating.can_transition_to(&TurnstileState::Idle));
+        assert!(TurnstileState::Validating.can_transition_to(TurnstileState::Granted));
+        assert!(TurnstileState::Validating.can_transition_to(TurnstileState::Denied));
+        assert!(!TurnstileState::Validating.can_transition_to(TurnstileState::Idle));
     }
 
     #[test]

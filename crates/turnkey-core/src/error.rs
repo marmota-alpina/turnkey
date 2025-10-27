@@ -73,6 +73,16 @@ pub enum Error {
     #[error("Frame too large: {size} bytes exceeds maximum {max_size} bytes")]
     FrameTooLarge { size: usize, max_size: usize },
 
+    // Display errors
+    #[error("Invalid line index: {line}, maximum is {max}")]
+    InvalidLine { line: usize, max: usize },
+
+    #[error("Empty default message is not allowed")]
+    EmptyDefaultMessage,
+
+    #[error("Invalid duration: must be greater than zero")]
+    InvalidDuration,
+
     // IO errors
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
