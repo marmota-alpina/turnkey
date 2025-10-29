@@ -7,6 +7,7 @@ edition = "2024"
 sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "chrono", "macros", "migrate"] }
 turnkey-core = { path = "../turnkey-core" }
 turnkey-protocol = { path = "../turnkey-protocol" }
+turnkey-network = { path = "../turnkey-network" }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

@@ -36,7 +36,7 @@
 //! ## Basic Setup and Offline Validation
 //!
 //! ```no_run
-//! use turnkey_storage::{Database, DatabaseConfig, OfflineValidator};
+//! use turnkey_storage::{Database, DatabaseConfig, OfflineValidator, AccessValidator};
 //! use turnkey_protocol::commands::access::AccessRequest;
 //! use turnkey_core::{AccessDirection, HenryTimestamp, ReaderType};
 //!
@@ -49,7 +49,7 @@
 //! let db = Database::new(config).await?;
 //!
 //! // Create offline validator
-//! let validator = OfflineValidator::new(db.pool().clone());
+//! let mut validator = OfflineValidator::new(db.pool().clone());
 //!
 //! // Validate access request
 //! let timestamp = HenryTimestamp::parse("27/10/2025 14:30:00")?;
@@ -200,4 +200,6 @@ pub use repositories::{
     AccessLogRepository, CardRepository, SqliteAccessLogRepository, SqliteCardRepository,
     SqliteUserRepository, UserRepository,
 };
-pub use validator::OfflineValidator;
+pub use validator::{
+    AccessValidator, OfflineValidator, OnlineValidator, OnlineValidatorConfig, Validator,
+};
