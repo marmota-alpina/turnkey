@@ -35,7 +35,9 @@ color = "auto"
 [target.x86_64-unknown-linux-gnu]
 # LLD Linker ENABLED - Provides 20-40% faster link times with LLVM integration
 linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=lld", "-C", "target-cpu=native"]
+# NOTE: target-cpu=native removed to prevent SIGILL errors in CI environments
+# See: https://github.com/marmota-alpina/turnkey/issues/XX
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 # Previous configuration (without LLD):
 # rustflags = ["-C", "target-cpu=native"]
