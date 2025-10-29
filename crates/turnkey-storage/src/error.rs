@@ -38,6 +38,18 @@ pub enum StorageError {
     #[error("Configuration error: {0}")]
     Configuration(String),
 
+    /// Network error during online validation
+    #[error("Network error: {0}")]
+    NetworkError(String),
+
+    /// Protocol conversion error
+    #[error("Protocol error: {0}")]
+    ProtocolError(String),
+
+    /// Validation failed after retries
+    #[error("Validation failed after {0} retries: {1}")]
+    ValidationFailed(usize, String),
+
     /// Generic internal error
     #[error("Internal error: {0}")]
     Internal(String),
