@@ -15,6 +15,7 @@ turnkey-core = { path = "../turnkey-core" }
 # Utilities
 bytes = { workspace = true }
 futures = "0.3"
+chrono = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
