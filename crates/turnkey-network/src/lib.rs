@@ -7,9 +7,11 @@
 //! # Components
 //!
 //! - **TcpClient**: Client for connecting to validation servers (Issue #65)
-//! - **TcpServer**: Server for accepting emulator connections (Issue #66 - future)
+//! - **TcpServer**: Server for accepting emulator connections (Issue #66)
 //!
-//! # Example
+//! # Examples
+//!
+//! ## TCP Client
 //!
 //! ```no_run
 //! use turnkey_network::{TcpClient, TcpClientConfig};
@@ -26,7 +28,24 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## TCP Server
+//!
+//! ```no_run
+//! use turnkey_network::{TcpServer, TcpServerConfig};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let config = TcpServerConfig::default();
+//! let mut server = TcpServer::bind(config).await?;
+//!
+//! let (device_id, message) = server.accept().await?;
+//! println!("Received from device {}: {:?}", device_id, message);
+//! # Ok(())
+//! # }
+//! ```
 
 mod client;
+mod server;
 
 pub use client::{TcpClient, TcpClientConfig, TcpClientError};
+pub use server::{ConnectionInfo, TcpServer, TcpServerConfig, TcpServerError};
