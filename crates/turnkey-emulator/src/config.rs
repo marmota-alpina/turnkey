@@ -45,11 +45,14 @@
 //!     default_display_message: "DIGITE SEU CODIGO".to_string(),
 //!     default_direction: AccessDirection::Entry,
 //!     idle_timeout_secs: 30,
+//!     rotation_duration_secs: 2,
+//!     network: None,
 //! };
 //! ```
 
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::net::IpAddr;
 use std::path::Path;
 use turnkey_core::{AccessDirection, Error, Result};
 
@@ -61,6 +64,54 @@ const MAX_DEVICE_ID: u8 = 99;
 
 /// Maximum display message length (LCD specification: 2 lines × 40 columns).
 const MAX_DISPLAY_MESSAGE_LENGTH: usize = 40;
+
+/// Network configuration for ONLINE mode.
+///
+/// Contains network settings required for TCP communication with
+/// the validation server in ONLINE mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    /// IP address for TCP connection in ONLINE mode.
+    ///
+    /// The server address to connect to for access validation.
+    /// Can be an IPv4 or IPv6 address.
+    pub ip_address: IpAddr,
+
+    /// Port for TCP connection.
+    ///
+    /// The server port to connect to for access validation.
+    /// Standard Henry protocol port is 3000.
+    pub port: u16,
+}
+
+impl NetworkConfig {
+    /// Create a new network configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `ip_address` - Server IP address
+    /// * `port` - Server port number
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use turnkey_emulator::config::NetworkConfig;
+    /// use std::net::IpAddr;
+    ///
+    /// let config = NetworkConfig::new(
+    ///     "192.168.1.100".parse::<IpAddr>().unwrap(),
+    ///     3000
+    /// );
+    /// ```
+    pub fn new(ip_address: IpAddr, port: u16) -> Self {
+        Self { ip_address, port }
+    }
+
+    /// Get the IP address as a string.
+    pub fn ip_address_string(&self) -> String {
+        self.ip_address.to_string()
+    }
+}
 
 /// Operation mode for the emulator.
 ///
@@ -108,6 +159,8 @@ impl Default for OperationMode {
 ///     default_display_message: "DIGITE SEU CODIGO".to_string(),
 ///     default_direction: AccessDirection::Entry,
 ///     idle_timeout_secs: 30,
+///     rotation_duration_secs: 2,
+///     network: None,
 /// };
 ///
 /// assert_eq!(config.device_id, 15);
@@ -172,6 +225,23 @@ pub struct EmulatorConfig {
     ///
     /// Default: 30 seconds
     pub idle_timeout_secs: u64,
+
+    /// Physical rotation duration in seconds.
+    ///
+    /// Time it takes for the turnstile to complete a physical rotation.
+    /// Used in emulation mode to simulate realistic hardware behavior.
+    /// Adjust this value to match your specific turnstile hardware
+    /// characteristics for accurate testing.
+    ///
+    /// Default: 2 seconds
+    pub rotation_duration_secs: u64,
+
+    /// Network configuration for ONLINE mode.
+    ///
+    /// Contains IP address and port for TCP connection to validation server.
+    /// Required when `mode` is `OperationMode::Online`.
+    /// Optional (can be `None`) when in `OperationMode::Offline`.
+    pub network: Option<NetworkConfig>,
 }
 
 impl Default for EmulatorConfig {
@@ -184,6 +254,8 @@ impl Default for EmulatorConfig {
             default_display_message: "DIGITE SEU CODIGO".to_string(),
             default_direction: AccessDirection::Entry,
             idle_timeout_secs: 30,
+            rotation_duration_secs: 2,
+            network: None,
         }
     }
 }
@@ -395,6 +467,7 @@ mod tests {
 
     #[test]
     fn test_serialize_deserialize() {
+        use std::net::IpAddr;
         use turnkey_core::AccessDirection;
 
         let config = EmulatorConfig {
@@ -405,11 +478,36 @@ mod tests {
             default_display_message: "WELCOME".to_string(),
             default_direction: AccessDirection::Exit,
             idle_timeout_secs: 60,
+            rotation_duration_secs: 3,
+            network: Some(NetworkConfig::new(
+                "192.168.1.100".parse::<IpAddr>().unwrap(),
+                3000,
+            )),
         };
 
         let toml_str = toml::to_string(&config).unwrap();
         let deserialized: EmulatorConfig = toml::from_str(&toml_str).unwrap();
 
         assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_network_config_creation() {
+        use std::net::IpAddr;
+
+        let config = NetworkConfig::new("192.168.1.100".parse::<IpAddr>().unwrap(), 3000);
+
+        assert_eq!(config.ip_address_string(), "192.168.1.100");
+        assert_eq!(config.port, 3000);
+    }
+
+    #[test]
+    fn test_network_config_ipv6() {
+        use std::net::IpAddr;
+
+        let config = NetworkConfig::new("::1".parse::<IpAddr>().unwrap(), 8080);
+
+        assert_eq!(config.ip_address_string(), "::1");
+        assert_eq!(config.port, 8080);
     }
 }

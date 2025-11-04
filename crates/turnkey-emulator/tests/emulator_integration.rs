@@ -18,6 +18,8 @@ fn test_emulator_config_validation() {
         default_display_message: "DIGITE SEU CODIGO".to_string(),
         default_direction: AccessDirection::Entry,
         idle_timeout_secs: 30,
+        rotation_duration_secs: 2,
+        network: None,
     };
 
     // Config should be valid
@@ -36,6 +38,8 @@ fn test_emulator_config_defaults() {
     assert_eq!(config.default_display_message, "DIGITE SEU CODIGO");
     assert_eq!(config.default_direction, AccessDirection::Entry);
     assert_eq!(config.idle_timeout_secs, 30);
+    assert_eq!(config.rotation_duration_secs, 2);
+    assert!(config.network.is_none());
 }
 
 #[test]
