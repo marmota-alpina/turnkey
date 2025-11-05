@@ -3,4 +3,23 @@ name = "turnkey-cli"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "turnkey"
+path = "src/main.rs"
+
 [dependencies]
+turnkey-emulator = { path = "../turnkey-emulator" }
+turnkey-core = { path = "../turnkey-core" }
+turnkey-hardware = { path = "../turnkey-hardware" }
+turnkey-storage = { path = "../turnkey-storage" }
+turnkey-protocol = { path = "../turnkey-protocol" }
+turnkey-network = { path = "../turnkey-network" }
+
+ratatui = "0.28"
+crossterm = "0.28"
+tokio = { version = "1.40", features = ["full"] }
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+chrono = "0.4"
