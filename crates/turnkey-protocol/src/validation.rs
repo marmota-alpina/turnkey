@@ -67,6 +67,37 @@
 
 use turnkey_core::{Error, Result, constants::*};
 
+/// Protocol delimiters that must not appear in field data.
+///
+/// These characters are reserved by the Henry protocol for message structure:
+/// - `]` - Field delimiter (separates data fields)
+/// - `+` - Device/command delimiter (separates message components)
+/// - `[` - Subfield delimiter (separates nested data)
+/// - `{` - Start frame marker
+/// - `}` - End frame marker
+pub const PROTOCOL_DELIMITERS: &[char] = &[']', '+', '[', '{', '}'];
+
+/// Check if a character is a protocol delimiter.
+///
+/// Protocol delimiters are reserved characters that structure Henry protocol
+/// messages. User input containing these characters could corrupt message
+/// framing or enable protocol injection attacks.
+///
+/// # Examples
+///
+/// ```
+/// use turnkey_protocol::validation::is_protocol_delimiter;
+///
+/// assert!(is_protocol_delimiter(']'));
+/// assert!(is_protocol_delimiter('+'));
+/// assert!(is_protocol_delimiter('['));
+/// assert!(!is_protocol_delimiter('a'));
+/// assert!(!is_protocol_delimiter('1'));
+/// ```
+pub fn is_protocol_delimiter(c: char) -> bool {
+    PROTOCOL_DELIMITERS.contains(&c)
+}
+
 /// Validate field value for protocol safety
 ///
 /// Ensures field does not contain reserved protocol delimiters that could
@@ -345,5 +376,39 @@ mod tests {
     fn test_validate_card_number_alphanumeric() {
         assert!(validate_card_number("ABC123XYZ").is_ok());
         assert!(validate_card_number("USER-001").is_ok());
+    }
+
+    // Tests for is_protocol_delimiter
+
+    #[test]
+    fn test_is_protocol_delimiter_field_delimiter() {
+        assert!(is_protocol_delimiter(']'));
+    }
+
+    #[test]
+    fn test_is_protocol_delimiter_device_delimiter() {
+        assert!(is_protocol_delimiter('+'));
+    }
+
+    #[test]
+    fn test_is_protocol_delimiter_subfield_delimiter() {
+        assert!(is_protocol_delimiter('['));
+    }
+
+    #[test]
+    fn test_is_protocol_delimiter_frame_markers() {
+        assert!(is_protocol_delimiter('{'));
+        assert!(is_protocol_delimiter('}'));
+    }
+
+    #[test]
+    fn test_is_protocol_delimiter_normal_chars() {
+        assert!(!is_protocol_delimiter('a'));
+        assert!(!is_protocol_delimiter('A'));
+        assert!(!is_protocol_delimiter('0'));
+        assert!(!is_protocol_delimiter('9'));
+        assert!(!is_protocol_delimiter('-'));
+        assert!(!is_protocol_delimiter('_'));
+        assert!(!is_protocol_delimiter(' '));
     }
 }

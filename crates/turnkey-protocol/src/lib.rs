@@ -16,4 +16,7 @@ pub use frame::Frame;
 pub use message::{Message, MessageType};
 pub use parser::MessageParser;
 pub use stream_parser::{DrainFrames, ParserState, StreamParser};
-pub use validation::{validate_card_number, validate_field, validate_field_lengths};
+pub use validation::{
+    PROTOCOL_DELIMITERS, is_protocol_delimiter, validate_card_number, validate_field,
+    validate_field_lengths,
+};

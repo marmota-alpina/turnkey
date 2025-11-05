@@ -2,6 +2,9 @@
 //!
 //! Command-line interface for the turnkey emulator with TUI support.
 
+use tracing::info;
+use turnkey_cli::client_tui;
+
 mod tui;
 
 use std::net::IpAddr;
@@ -39,7 +42,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Run the emulator with TUI
+    /// Run the turnstile emulator with TUI
     Run {
         /// Device ID (1-99)
         #[arg(short = 'i', long, default_value = "1")]
@@ -64,6 +67,17 @@ enum Commands {
         /// Configuration file
         #[arg(short = 'c', long)]
         config: Option<PathBuf>,
+    },
+
+    /// Run the client-emulator (validation server) with TUI
+    Server {
+        /// Bind IP address
+        #[arg(short, long, default_value = "0.0.0.0")]
+        bind_ip: String,
+
+        /// Bind port
+        #[arg(short, long, default_value = "3000")]
+        port: u16,
     },
 }
 
@@ -98,6 +112,9 @@ async fn main() -> Result<()> {
             config,
         }) => {
             run_emulator(device_id, mode, server_ip, server_port, database, config).await?;
+        }
+        Some(Commands::Server { bind_ip, port }) => {
+            run_server(bind_ip, port).await?;
         }
         None => {
             run_emulator(
@@ -233,6 +250,18 @@ async fn run_emulator(
             result.context("TUI task panicked")?;
         }
     }
+
+    Ok(())
+}
+
+/// Run the client-emulator server with TUI.
+async fn run_server(bind_ip: String, port: u16) -> Result<()> {
+    let addr_str = format!("{}:{}", bind_ip, port);
+    let bind_addr = addr_str.parse().context("Invalid bind address")?;
+
+    info!("Starting client-emulator server on {}", bind_addr);
+
+    client_tui::run_client_tui(bind_addr).await?;
 
     Ok(())
 }
