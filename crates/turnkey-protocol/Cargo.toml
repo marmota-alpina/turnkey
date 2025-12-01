@@ -16,7 +16,7 @@ tokio-util = { version = "0.7", features = ["codec"] }
 rstest = "0.26"
 tokio = { workspace = true, features = ["test-util", "macros"] }
 futures = "0.3"
-criterion = { version = "0.7.0", features = ["html_reports"] }
+criterion = { version = "0.8.0", features = ["html_reports"] }
 proptest = "1.4"
 
 [[bench]]
